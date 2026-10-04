@@ -187,12 +187,23 @@ def test_stateless_cycle_fetches_only_when_due_and_decides_once() -> None:
         return original(instrument, timeframe, now)
 
     market.fetch_closed_candles = counting  # type: ignore[method-assign]
-    first = cli.cycle(store, market, end + timedelta(seconds=20))
+    first, _ = cli.cycle(store, market, end + timedelta(seconds=20))
     assert first["signals_created"] == 4 * N and len(calls) == 4
-    second = cli.cycle(store, market, end + timedelta(seconds=80))
+    second, _ = cli.cycle(store, market, end + timedelta(seconds=80))
     assert second["signals_created"] == 0
     assert len(calls) == 4  # nichts fällig: kein Abruf beim Handelsplatz
     assert cli.open_keys(store, end + timedelta(seconds=80)) == set()
     # nach Ablauf der 4h-Kerze ohne neue Daten: Abruf wird wieder versucht, Feed gilt als veraltet
-    late = cli.cycle(store, market, end + timedelta(hours=4, minutes=10))
+    late, _ = cli.cycle(store, market, end + timedelta(hours=4, minutes=10))
     assert late["feeds"]["TEST:AAA/USD|4h"] == "STALE" and late["signals_created"] == 0
+
+
+def test_cycle_without_alpaca_keys_ignores_stocks() -> None:
+    """Ohne Alpaca-Schlüssel läuft der Crypto-Teil unverändert; kein Aktienabruf, keine Aktiensignale."""
+    from tradingengine import cli
+
+    store, market, end = _setup()
+    result, _ = cli.cycle(store, market, end + timedelta(seconds=20), alpaca=None)
+    assert result["signals_created"] == 4 * N
+    feeds = result["feeds"]
+    assert isinstance(feeds, dict) and all(not k.startswith("ALPACA:") for k in feeds)

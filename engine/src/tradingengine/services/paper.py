@@ -17,15 +17,18 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from ..adapters.pg_paper import PaperRepo, policy_from_json
+from ..calendar_us import UsCalendar, default_calendar
 from ..core import indicators as ind
 from ..core.candles import Candle, floor_time
 from ..core.costs import KRAKEN_SPOT_TIER1, CostModel
+from ..core.costs_stocks import IBKR_FIXED_US
 from ..core.paper import Management, PaperState, RiskInputs, close_all, pause_entries, step_candle, submit_entries
 from ..core.regime import RegimePoint, daily_regimes, regime_at
 from ..core.risk import RiskPolicy
 from ..core.simulator import SimConfig
 from ..core.strategies import ACTIVE, StrategyDef
 from ..ports import Command
+from ..universe_stocks import is_stock_id
 
 log = logging.getLogger(__name__)
 
@@ -33,7 +36,8 @@ EXEC_TIMEFRAME = "4h"
 REGIME_TIMEFRAME = "1d"
 LOOKBACK = 600
 ZURICH = ZoneInfo("Europe/Zurich")
-COST_MODELS: dict[str, CostModel] = {KRAKEN_SPOT_TIER1.version: KRAKEN_SPOT_TIER1}
+COST_MODELS: dict[str, CostModel] = {KRAKEN_SPOT_TIER1.version: KRAKEN_SPOT_TIER1, IBKR_FIXED_US.version: IBKR_FIXED_US}
+ASSET_CLASSES = {"CRYPTO": (KRAKEN_SPOT_TIER1.version, "sim@1"), "US_STOCKS": (IBKR_FIXED_US.version, "sim-stocks@1")}
 SIM = SimConfig()
 MANAGED_STATES = {"ACTIVE", "ENTRIES_PAUSED", "WINDING_DOWN", "STOPPED", "ERROR"}
 
@@ -105,7 +109,7 @@ def _risk_inputs(repo: PaperRepo, state: PaperState, row: dict[str, Any], policy
     )
 
 
-def run_accounts(repo: PaperRepo, feed_status: dict[str, str], now: datetime) -> dict[str, Any]:
+def run_accounts(repo: PaperRepo, feed_status: dict[str, str], now: datetime, calendar: UsCalendar | None = None) -> dict[str, Any]:
     """Ein Tick für alle Paper-Konten. `feed_status`: Status je "instrument|timeframe"."""
     summary: dict[str, Any] = {}
     specs, ticks, _ = repo.specs()
@@ -114,6 +118,11 @@ def run_accounts(repo: PaperRepo, feed_status: dict[str, str], now: datetime) ->
         if ap_state not in MANAGED_STATES:
             repo.mark_signals_seen(row["episode_id"], now)  # READY: nichts handeln, alte Signale nicht nachholen
             continue
+        from . import stocks  # lokal: stocks importiert dieses Modul
+
+        if stocks.is_stock_account(row):
+            summary[account_id] = stocks.run_stock_account(repo, row, feed_status, now, calendar or default_calendar(now))
+            continue
         model = COST_MODELS.get(row["cost_model"], KRAKEN_SPOT_TIER1)
         policy = policy_from_json(row["policy"])
         state = repo.load_state(account_id)
@@ -121,7 +130,8 @@ def run_accounts(repo: PaperRepo, feed_status: dict[str, str], now: datetime) ->
 
         submitted = 0
         if ap_state == "ACTIVE":
-            pending = repo.new_buy_signals(row["signals_through"], row["strategy_version_ids"])
+            # Crypto-Konten handeln nur Crypto-Signale (Aktien haben eigenes Kostenmodell und eigene Konten)
+            pending = [p for p in repo.new_buy_signals(row["signals_through"], row["strategy_version_ids"]) if not is_stock_id(p[0].instrument_id)]
             if pending:
                 prices = repo.last_prices(EXEC_TIMEFRAME, now)
                 feed_ok = {i: feed_status.get(f"{i}|{EXEC_TIMEFRAME}") == "OK" for i in ticks}
@@ -163,9 +173,12 @@ def handle_command(repo: PaperRepo, cmd: Command, now: datetime) -> tuple[str, d
         existing = {a["id"] for a in repo.accounts()}
         slug = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-") or "konto"
         account_id = next(c for c in (f"paper-{slug}" if n == 1 else f"paper-{slug}-{n}" for n in range(1, 1000)) if c not in existing)
-        repo.create_account(account_id, name, "USD", cash, RiskPolicy(), [s.version.id for s in ACTIVE], KRAKEN_SPOT_TIER1.version, SIM.version,
-                            now, sim_through)
-        return "DONE", {"account_id": account_id, "state": "READY"}
+        asset_class = str(cmd.params.get("asset_class") or "CRYPTO")
+        if asset_class not in ASSET_CLASSES:
+            return "REJECTED", {"reason": f"Unbekannte Anlageklasse {asset_class} (CRYPTO oder US_STOCKS)"}
+        cost_model, sim_version = ASSET_CLASSES[asset_class]
+        repo.create_account(account_id, name, "USD", cash, RiskPolicy(), [s.version.id for s in ACTIVE], cost_model, sim_version, now, sim_through)
+        return "DONE", {"account_id": account_id, "state": "READY", "asset_class": asset_class}
 
     rows = {a["id"]: a for a in repo.accounts()}
     row = rows.get(cmd.target or "")
@@ -204,8 +217,10 @@ def handle_command(repo: PaperRepo, cmd: Command, now: datetime) -> tuple[str, d
         open_trades, open_orders = repo.open_counts(row["episode_id"])
         if open_trades or open_orders:
             return "REJECTED", {"reason": f"Reset erst ohne Bestand möglich ({open_trades} Position(en), {open_orders} Order(s) offen)"}
-        number = repo.reset_account(account_id, cash, RiskPolicy(), [s.version.id for s in ACTIVE], KRAKEN_SPOT_TIER1.version, SIM.version,
-                                    now, sim_through)
+        # Reset behält Anlageklasse und Kostenmodell des Kontos
+        cost_model = row["cost_model"]
+        sim_version = next((sim for cm, sim in ASSET_CLASSES.values() if cm == cost_model), SIM.version)
+        number = repo.reset_account(account_id, cash, RiskPolicy(), [s.version.id for s in ACTIVE], cost_model, sim_version, now, sim_through)
         repo.set_autopilot(account_id, "READY", f"Neue Episode {number}", now)
         return "DONE", {"state": "READY", "episode": number}
 

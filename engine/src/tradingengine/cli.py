@@ -22,15 +22,18 @@ from pathlib import Path
 import httpx
 
 from .adapters import kraken_archive
+from .adapters.alpaca_data import AlpacaCredentials, AlpacaData
 from .adapters.kraken_public import KrakenPublic
 from .adapters.pg_paper import PaperRepo
 from .adapters.pg_store import PgStore
+from .calendar_us import UsCalendar
 from .core.candles import timeframe_delta
 from .core.strategies import ACTIVE
 from .ports import Instrument, MarketData, Store
 from .schema_version import SCHEMA_VERSION
-from .services import commands, marketdata, paper, signals
+from .services import commands, marketdata, paper, signals, stocks
 from .universe import SEED_INSTRUMENTS, SIGNAL_TIMEFRAMES
+from .universe_stocks import is_stock, is_stock_id
 
 log = logging.getLogger("tradingengine")
 
@@ -51,12 +54,24 @@ def open_keys(store: Store, now: datetime) -> set[str]:
     return out
 
 
-def cycle(store: Store, market: MarketData, now: datetime) -> dict[str, object]:
-    """Ein Durchlauf: fällige Kerzen holen, Qualität bewerten, fehlende Entscheidungen erzeugen."""
-    sync = marketdata.sync_once(store, market, SIGNAL_TIMEFRAMES, now)
-    pending = open_keys(store, now) | sync.changed
-    created, still = signals.run_once(store, SIGNAL_TIMEFRAMES, sync.status, pending, market.source, now)
-    return {"feeds": sync.status, "signals_created": created, "pending": sorted(still)}
+def cycle(store: Store, market: MarketData, now: datetime, alpaca: AlpacaData | None = None) -> tuple[dict[str, object], UsCalendar]:
+    """Ein Durchlauf: fällige Kerzen holen, Qualität bewerten, fehlende Entscheidungen erzeugen.
+
+    Crypto über Kraken (4h/1d), US-Aktien/ETFs über Alpaca (Tageskerzen je Sitzung, nur mit Schlüsseln)."""
+    universe = store.universe()
+    crypto = [i for i in universe if not is_stock(i)]
+    sync = marketdata.sync_once(store, market, SIGNAL_TIMEFRAMES, now, instruments=crypto)
+    stock_sync, cal = stocks.sync_stocks(store, alpaca, now)
+    feeds = {**sync.status, **stock_sync.status}
+    crypto_pending = {k for k in open_keys(store, now) | sync.changed if not is_stock_id(k.rsplit("|", 1)[0])}
+    stock_pending = stocks.stock_open_keys(store, now, cal, len(ACTIVE)) | stock_sync.changed
+    created, still = signals.run_once(store, SIGNAL_TIMEFRAMES, feeds, crypto_pending, market.source, now)
+    if stock_pending and alpaca is not None:
+        created_s, still_s = signals.run_once(
+            store, ["1d"], feeds, stock_pending, alpaca.source, now, valid_until_of=stocks.valid_until_of(cal)
+        )
+        created, still = created + created_s, still | still_s
+    return {"feeds": feeds, "signals_created": created, "pending": sorted(still)}, cal
 
 
 def ensure_universe(store: Store, market: KrakenPublic) -> None:
@@ -75,12 +90,15 @@ def tick(dsn: str, healthcheck_url: str | None = None) -> dict[str, object]:
         market = KrakenPublic()
         now = datetime.now(UTC)
         ensure_universe(store, market)
+        creds = AlpacaCredentials.from_env()
+        alpaca = AlpacaData(creds) if creds else None
+        stocks.ensure_stock_universe(store, alpaca)
         repo = PaperRepo(store.connection())
         handled = commands.process_pending(store, now, repo)
-        result = cycle(store, market, now)
+        result, cal = cycle(store, market, now, alpaca)
         feeds = result["feeds"]
         assert isinstance(feeds, dict)
-        result["paper"] = paper.run_accounts(repo, feeds, datetime.now(UTC))
+        result["paper"] = paper.run_accounts(repo, feeds, datetime.now(UTC), cal)
         store.heartbeat(SERVICE, datetime.now(UTC), SCHEMA_VERSION, {"last_cycle": result, "runner": "tick"})
         _ping_healthcheck(healthcheck_url)
         return {**result, "commands": handled}
@@ -134,10 +152,13 @@ def run(store: PgStore, market: KrakenPublic, healthcheck_url: str | None) -> No
             repo = PaperRepo(store.connection())
             commands.process_pending(store, now, repo)
             if started - last_sync >= SYNC_INTERVAL_S:
-                last_cycle = cycle(store, market, now)
+                creds = AlpacaCredentials.from_env()
+                alpaca = AlpacaData(creds) if creds else None
+                stocks.ensure_stock_universe(store, alpaca)
+                last_cycle, cal = cycle(store, market, now, alpaca)
                 feeds = last_cycle["feeds"]
                 assert isinstance(feeds, dict)
-                last_cycle["paper"] = paper.run_accounts(repo, feeds, datetime.now(UTC))
+                last_cycle["paper"] = paper.run_accounts(repo, feeds, datetime.now(UTC), cal)
                 last_sync = started
             if started - last_beat >= HEARTBEAT_INTERVAL_S:
                 store.heartbeat(SERVICE, now, SCHEMA_VERSION, {"last_cycle": last_cycle})
