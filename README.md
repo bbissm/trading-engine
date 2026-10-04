@@ -1,0 +1,29 @@
+# TradingEngine
+
+Persönliche Handelsplattform für Aktien, ETFs und Crypto-Spot: Marktbeobachtung, nachvollziehbare Signale, Paper-Autopilot mit virtuellem Kapital, Lernlabor und – erst nach ausdrücklicher Aktivierung – begrenzter Live-Autopilot über eigene Konten. «TradingEngine» ist ein Arbeitstitel.
+
+**Status:** Planung (Stand 4. Oktober 2026). Es existiert noch kein Code. Es ist kein Broker- oder Exchange-Konto verbunden und kein Echtgeldhandel aktiviert.
+
+Technische Funktion, belegte Strategiequalität und Echtgeld-Freigabe sind drei getrennte Dinge und werden getrennt abgenommen. Nichts in diesem Repository ist ein Gewinnversprechen.
+
+## Projektplan
+
+| Dokument | Inhalt | Auftragspunkt |
+|---|---|---|
+| [01 Produkt, Module, Zustände](docs/01-produkt-module-zustaende.md) | Produktbeschreibung, Abgrenzung V1/Zielprodukt, Module, Zustandsabläufe, Stopp-Aktionen | 1, 2 |
+| [02 Screens, Abläufe, Funktionskatalog](docs/02-screens-ablaeufe-funktionskatalog.md) | Screens, Nutzerabläufe, Bedienbegriffe, Must/Should/Later | 3, 4 |
+| [03 Anbieter und Daten](docs/03-anbieter-und-daten.md) | quellenbasierter Vergleich IBKR / Kraken / Alpaca, Datenquellen, Datenrechte, Startumfang | 5 |
+| [04 Strategie, Lernen, Validierung](docs/04-strategie-lernen-validierung.md) | Features, Regime, Startstrategien, Bias-Schutz, Gates G1–G5, Lernwege | 8 |
+| [05 Architektur und Datenmodell](docs/05-architektur-datenmodell.md) | Vercel vs. Engine-Server, Technologieentscheide, Lizenzen, fachliches Datenmodell | 6, 7 |
+| [06 Risiko, Ausführung, Benachrichtigung](docs/06-risiko-ausfuehrung-benachrichtigung.md) | Risikopolicy, Orderweg, Schutzorders, Abgleich, Wiederherstellung, Alarme | 9 |
+| [07 Abnahmetests](docs/07-abnahmetests.md) | 17 Pflichtszenarien + 13 zusätzliche Tests | Abschnitt 20 |
+| [08 Etappen und Backlog](docs/08-etappen-backlog.md) | Etappen mit Aufwandsspannen, Epics und Tasks | 10, 11 |
+| [09 Kosten, Annahmen, nächster Schritt](docs/09-kosten-annahmen-naechster-schritt.md) | laufende Kosten in Szenarien, Annahmen, offene Punkte, nächster Schritt | 12, 13, 14 |
+
+## Kernentscheide
+
+- **Web-App auf Vercel** (Next.js 16, Tailwind 4, Drizzle, Neon Postgres – wie ContentEngine, CommerceEngine und das Control Center), **Engine auf einem kleinen Dauerlauf-Server** (Python, Docker). Vercel allein kann keine stehenden Verbindungen und keinen Order-/Positionsmanager betreiben.
+- **Paper, Live und Lernlabor** sind getrennte Prozesse mit getrennten Zugangsdaten und Datenbankrollen.
+- **Live-Kandidaten:** Interactive Brokers (Aktien/ETF), Kraken (Crypto-Spot). Paper-Phase mit kostenlosen Daten (Alpaca Paper-Only, Kraken öffentlich).
+- **Eine Codebasis** für Strategie, Risikoprüfung und Order-Zustandsautomat in Backtest, Paper und Live.
+- **Schutzorders beim Anbieter** als erste Linie; kein Dead-Man-Switch, der Schutzorders löscht.
