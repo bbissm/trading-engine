@@ -5,5 +5,11 @@
   "buildCommand": "pnpm vercel-build",
   "regions": [
     "fra1"
+  ],
+  "crons": [
+    {
+      "path": "/api/cron/watchdog",
+      "schedule": "*/5 * * * *"
+    }
   ]
 }

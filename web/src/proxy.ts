@@ -4,7 +4,8 @@ import { checkCredentials, createSessionToken, SESSION_COOKIE, sessionCookieOpti
 /**
  * Access to the whole app (UI + server actions): session cookie from the login page,
  * or Basic Auth (scripts, curl).
- * Excluded: login, manifest and app icons (iOS fetches them without a session).
+ * Excluded: login, manifest and app icons (iOS fetches them without a session), and the machine endpoints
+ * /api/telegram (checks the Telegram secret header and chat id) and /api/cron/* (checks the CRON_SECRET bearer).
  *
  * TODO(E0-4): interim password session — passkey + TOTP + step-up (Better Auth) must replace this
  * before any live-trading control exists. See src/lib/session.ts.
@@ -46,5 +47,5 @@ export async function proxy(req: NextRequest) {
 }
 
 export const config = {
-  matcher: [{ source: "/((?!_next/|favicon.ico|icon|apple-icon|pwa-icon/|manifest.webmanifest|login).*)" }],
+  matcher: [{ source: "/((?!_next/|favicon.ico|icon|apple-icon|pwa-icon/|manifest.webmanifest|login|api/telegram|api/cron/).*)" }],
 };
