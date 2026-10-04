@@ -20,10 +20,13 @@ cd ../web && pnpm dev                                          # .env.local gem�
    Vercel-Projekt `trading-engine` verbinden; `DATABASE_URL` wird als Umgebungsvariable gesetzt.
 2. Plan **Launch** wählen und Scale-to-zero deaktivieren – die Engine ist dauerhaft verbunden
    (Kosten: docs/09).
-3. Migration ausführen: `cd web && DATABASE_URL=… pnpm db:migrate`. Migrationen laufen bewusst nicht im
-   Build; Reihenfolge bei Schemaänderungen: Migration → Engine ausrollen → Web ausrollen.
-4. Getrennte Datenbankrollen (`web`, `engine_paper`, `engine_live`, `engine_lab`) werden eingeführt,
-   sobald es Orders gibt (Etappe 2/4). Bis dahin nutzen Web und Engine denselben Zugang.
+3. Migrationen laufen im Vercel-Build (`pnpm vercel-build`), weil die Neon-Zugangsdaten als «sensitive»
+   hinterlegt und ausserhalb von Vercel nicht lesbar sind. Bei Schemaänderungen die Engine direkt nach
+   dem Web-Deploy mit der neuen Schema-Version ausrollen.
+4. Die Engine verbindet sich mit der eigenen Rolle `te_engine` (nur die nötigen Rechte; `signal`, `candle`,
+   `feature_snapshot`, `audit_event` sind für sie nur einfügbar). Der Build legt sie an, wenn
+   `TE_ENGINE_DB_PASSWORD` gesetzt ist, und schreibt Host und Datenbankname ins Build-Log. Weitere Rollen
+   (`engine_paper`, `engine_live`, `engine_lab`) folgen mit den Orders (Etappe 2/4).
 
 ## 3. Web-App (Vercel)
 
@@ -37,7 +40,7 @@ cd ../web && pnpm dev                                          # .env.local gem�
 1. Kleiner VPS in der EU (z. B. Hetzner CX23; Verfügbarkeit prüfen), Docker installieren, Firewall nur SSH.
 2. Repo klonen, `.env` neben `docker-compose.yml` anlegen:
    ```
-   DATABASE_URL=postgresql://…          # Neon, direkte (nicht gepoolte) Verbindung
+   DATABASE_URL=postgresql://te_engine:<TE_ENGINE_DB_PASSWORD>@<host aus dem Build-Log>/<datenbank>?sslmode=require
    HEALTHCHECK_URL=https://hc-ping.com/…
    ```
 3. `docker compose up -d --build engine`. Der Container startet nach Neustarts selbst wieder.

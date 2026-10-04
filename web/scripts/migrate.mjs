@@ -1,5 +1,6 @@
-// Applies the Drizzle migrations in ./drizzle. Deliberately NOT part of `build`:
-// the engine checks schema_meta.version on start, so migrations run as their own deploy step (`pnpm db:migrate`).
+// Applies the Drizzle migrations in ./drizzle. Not part of the plain `build`; on Vercel it runs in
+// `vercel-build`, because the (sensitive) database credentials are only available there.
+// The engine checks schema_meta.version on start and refuses to run on a mismatch.
 // Neon URLs use the HTTP driver, everything else (local Postgres, CI) node-postgres.
 import { fileURLToPath } from "node:url";
 

@@ -31,12 +31,14 @@ DATABASE_URL=postgres://postgres:dev@localhost:5432/postgres pnpm db:migrate
 | `TE_USER` (optional, Standard `admin`) | Benutzername; erscheint als `user:<name>` in `command.issued_by` und `audit_event.actor` |
 | `SESSION_SECRET` (optional) | Zusätzliches Geheimnis für die Session-Signatur. Ändern meldet alle Geräte ab |
 | `DATABASE_POOL_MAX` (optional) | Poolgrösse für `pg`, Standard 5 |
+| `TE_ENGINE_DB_PASSWORD` (optional) | Passwort der Datenbankrolle `te_engine` (mind. 32 alphanumerische Zeichen). Ist es gesetzt, legt der Vercel-Build die Rolle mit minimalen Rechten an |
 
 ## Skripte
 
 | Skript | Zweck |
 |---|---|
 | `pnpm dev` / `pnpm build` / `pnpm start` | Next.js. **`build` führt keine Migrationen aus** |
+| `pnpm vercel-build` | Build auf Vercel: Migrationen → Engine-Datenbankrolle (`scripts/roles.mjs`) → `next build`. Die Neon-Zugangsdaten sind als «sensitive» hinterlegt und nur dort verfügbar |
 | `pnpm db:generate` | Erzeugt aus `src/db/schema.ts` eine neue SQL-Migration in `drizzle/` |
 | `pnpm db:migrate` | Spielt die Migrationen ein (`scripts/migrate.mjs`), als eigener Deploy-Schritt |
 | `pnpm typecheck` / `pnpm lint` / `pnpm test` | TypeScript, ESLint, Vitest (DB-Tests laufen gegen PGlite mit den echten Migrationen) |

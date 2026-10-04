@@ -1,0 +1,63 @@
+// Creates/updates the database role the engine connects with (least privilege) and prints the
+// non-secret connection coordinates (host, database) so the engine server can be configured.
+// Runs after the migrations in the Vercel build, where the database credentials are available.
+// Skipped when TE_ENGINE_DB_PASSWORD is not set. Idempotent.
+const url = process.env.DATABASE_URL_UNPOOLED ?? process.env.DATABASE_URL ?? process.env.POSTGRES_URL;
+const password = process.env.TE_ENGINE_DB_PASSWORD;
+const ROLE = "te_engine";
+
+if (!url || !password) {
+  console.log("[roles] DATABASE_URL or TE_ENGINE_DB_PASSWORD not set – skipping engine role");
+  process.exit(0);
+}
+if (!/^[A-Za-z0-9]{32,}$/.test(password)) {
+  console.error("[roles] TE_ENGINE_DB_PASSWORD must be at least 32 alphanumeric characters");
+  process.exit(1);
+}
+
+// Tables the engine may write. Everything is readable; `signal`, `candle`, `feature_snapshot` and
+// `audit_event` are insert-only (append-only), `command` may only be acknowledged.
+const GRANTS = {
+  instrument: "insert, update",
+  feed_status: "insert, update",
+  heartbeat: "insert, update",
+  strategy_version: "insert",
+  candle: "insert",
+  feature_snapshot: "insert",
+  signal: "insert",
+  audit_event: "insert",
+};
+
+const statements = [
+  `do $$ begin
+     if not exists (select from pg_roles where rolname = '${ROLE}') then
+       create role ${ROLE} login password '${password}';
+     else
+       alter role ${ROLE} login password '${password}';
+     end if;
+   end $$`,
+  `grant usage on schema public to ${ROLE}`,
+  `revoke all on all tables in schema public from ${ROLE}`,
+  `grant select on all tables in schema public to ${ROLE}`,
+  `grant usage, select on all sequences in schema public to ${ROLE}`,
+  ...Object.entries(GRANTS).map(([table, privileges]) => `grant ${privileges} on "${table}" to ${ROLE}`),
+  `grant update (status, result, handled_at) on command to ${ROLE}`,
+];
+
+if (/\.neon\.tech|neon\.build/.test(url)) {
+  const { neon } = await import("@neondatabase/serverless");
+  const sql = neon(url);
+  for (const statement of statements) await sql.query(statement);
+} else {
+  const { default: pg } = await import("pg");
+  const client = new pg.Client({ connectionString: url });
+  await client.connect();
+  try {
+    for (const statement of statements) await client.query(statement);
+  } finally {
+    await client.end();
+  }
+}
+
+const parsed = new URL(url);
+console.log(`[roles] engine role "${ROLE}" ready: host=${parsed.hostname} port=${parsed.port || 5432} database=${parsed.pathname.slice(1)}`);
