@@ -26,6 +26,16 @@ const GRANTS = {
   feature_snapshot: "insert",
   signal: "insert",
   audit_event: "insert",
+  // Paper-Handel (Etappe 2). Getrennte Rollen für Paper/Live/Lab folgen mit dem Live-Orderweg (Etappe 4).
+  account: "insert",
+  episode: "insert, update",
+  autopilot: "insert, update",
+  trade: "insert, update",
+  trade_order: "insert, update",
+  fill: "insert",
+  reservation: "insert, update, delete",
+  equity_snapshot: "insert",
+  signal_outcome: "insert",
 };
 
 const statements = [

@@ -24,6 +24,9 @@ class PgStore:
             self._conn = psycopg.connect(self._dsn, autocommit=True, row_factory=dict_row)
         return self._conn
 
+    def connection(self) -> psycopg.Connection[dict[str, Any]]:
+        return self._c()
+
     def reset(self) -> None:
         """Verbindung verwerfen (nach einem Fehler); der nächste Zugriff verbindet neu."""
         if self._conn is not None and not self._conn.closed:
@@ -43,12 +46,15 @@ class PgStore:
                 # in_universe wird nur beim ersten Anlegen gesetzt: spätere Freigaben/Sperren sind Bedienhandlungen.
                 cur.execute(
                     """
-                    insert into instrument (id, kind, venue, venue_symbol, name, base_asset, quote_currency, leader_id, in_universe, tick_size)
-                    values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    insert into instrument (id, kind, venue, venue_symbol, name, base_asset, quote_currency, leader_id, in_universe, tick_size,
+                                            min_qty, min_notional)
+                    values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     on conflict (id) do update set venue_symbol = excluded.venue_symbol, name = excluded.name,
-                        leader_id = excluded.leader_id, tick_size = coalesce(excluded.tick_size, instrument.tick_size)
+                        leader_id = excluded.leader_id, tick_size = coalesce(excluded.tick_size, instrument.tick_size),
+                        min_qty = coalesce(excluded.min_qty, instrument.min_qty),
+                        min_notional = coalesce(excluded.min_notional, instrument.min_notional)
                     """,
-                    (i.id, i.kind, i.venue, i.venue_symbol, i.name, i.base_asset, i.quote_currency, i.leader_id, i.in_universe, i.tick_size),
+                    (i.id, i.kind, i.venue, i.venue_symbol, i.name, i.base_asset, i.quote_currency, i.leader_id, i.in_universe, i.tick_size, i.min_qty, i.min_notional),
                 )
 
     def universe(self) -> list[Instrument]:
@@ -59,7 +65,7 @@ class PgStore:
             Instrument(
                 id=r["id"], kind=r["kind"], venue=r["venue"], venue_symbol=r["venue_symbol"], name=r["name"],
                 base_asset=r["base_asset"], quote_currency=r["quote_currency"], leader_id=r["leader_id"],
-                in_universe=r["in_universe"], tick_size=r["tick_size"],
+                in_universe=r["in_universe"], tick_size=r["tick_size"], min_qty=r["min_qty"], min_notional=r["min_notional"],
             )
             for r in rows
         ]
@@ -193,13 +199,13 @@ class PgStore:
             """
             insert into signal (instrument_id, timeframe, candle_close, strategy_version_id, action, regime, score,
                                 entry, stop, target, max_hold_bars, valid_until, triggers, counter, data_source,
-                                data_age_s, created_at)
-            values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                                data_age_s, created_at, ref_level)
+            values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             on conflict (strategy_version_id, instrument_id, timeframe, candle_close) do nothing
             """,
             (signal.instrument_id, signal.timeframe, d.candle_close, signal.strategy_version_id, d.action.value,
              d.regime.value, d.score, d.entry, d.stop, d.target, d.max_hold_bars, signal.valid_until,
-             Jsonb(d.triggers), Jsonb(d.counter), signal.data_source, signal.data_age_s, signal.created_at),
+             Jsonb(d.triggers), Jsonb(d.counter), signal.data_source, signal.data_age_s, signal.created_at, d.ref_level),
         )
         return cur.rowcount == 1
 

@@ -23,6 +23,8 @@ class Instrument:
     leader_id: str | None = None
     in_universe: bool = True
     tick_size: Decimal | None = None
+    min_qty: Decimal | None = None
+    min_notional: Decimal | None = None
 
 
 @dataclass(frozen=True, slots=True)

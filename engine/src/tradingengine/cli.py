@@ -23,12 +23,13 @@ import httpx
 
 from .adapters import kraken_archive
 from .adapters.kraken_public import KrakenPublic
+from .adapters.pg_paper import PaperRepo
 from .adapters.pg_store import PgStore
 from .core.candles import timeframe_delta
 from .core.strategies import ACTIVE
 from .ports import Instrument, MarketData, Store
 from .schema_version import SCHEMA_VERSION
-from .services import commands, marketdata, signals
+from .services import commands, marketdata, paper, signals
 from .universe import SEED_INSTRUMENTS, SIGNAL_TIMEFRAMES
 
 log = logging.getLogger("tradingengine")
@@ -61,7 +62,7 @@ def cycle(store: Store, market: MarketData, now: datetime) -> dict[str, object]:
 def ensure_universe(store: Store, market: KrakenPublic) -> None:
     """Stammdaten anlegen bzw. ergänzen; die Abfrage beim Handelsplatz nur, wenn etwas fehlt."""
     known = {i.id: i for i in store.universe()}
-    if all(s.id in known and known[s.id].tick_size is not None for s in SEED_INSTRUMENTS):
+    if all(s.id in known and known[s.id].tick_size is not None and known[s.id].min_qty is not None for s in SEED_INSTRUMENTS):
         return
     store.upsert_instruments(seed_instruments(market))
 
@@ -74,8 +75,12 @@ def tick(dsn: str, healthcheck_url: str | None = None) -> dict[str, object]:
         market = KrakenPublic()
         now = datetime.now(UTC)
         ensure_universe(store, market)
-        handled = commands.process_pending(store, now)
+        repo = PaperRepo(store.connection())
+        handled = commands.process_pending(store, now, repo)
         result = cycle(store, market, now)
+        feeds = result["feeds"]
+        assert isinstance(feeds, dict)
+        result["paper"] = paper.run_accounts(repo, feeds, datetime.now(UTC))
         store.heartbeat(SERVICE, datetime.now(UTC), SCHEMA_VERSION, {"last_cycle": result, "runner": "tick"})
         _ping_healthcheck(healthcheck_url)
         return {**result, "commands": handled}
@@ -86,11 +91,15 @@ def tick(dsn: str, healthcheck_url: str | None = None) -> dict[str, object]:
 def seed_instruments(market: KrakenPublic) -> list[Instrument]:
     """Start-Universum mit Tick-Grössen vom Handelsplatz; ohne Antwort bleiben bekannte Werte erhalten."""
     try:
-        ticks = market.fetch_tick_sizes([i.venue_symbol for i in SEED_INSTRUMENTS])
+        specs = market.fetch_pair_specs([i.venue_symbol for i in SEED_INSTRUMENTS])
     except Exception as exc:
-        log.warning("Tick-Grössen nicht abrufbar: %s", exc)
+        log.warning("Handelsplatz-Spezifikationen nicht abrufbar: %s", exc)
         return SEED_INSTRUMENTS
-    return [replace(i, tick_size=ticks.get(i.venue_symbol)) for i in SEED_INSTRUMENTS]
+    out: list[Instrument] = []
+    for i in SEED_INSTRUMENTS:
+        tick, min_qty, min_notional = specs.get(i.venue_symbol, (None, None, None))
+        out.append(replace(i, tick_size=tick, min_qty=min_qty, min_notional=min_notional))
+    return out
 
 
 def _check_schema(store: Store) -> None:
@@ -122,9 +131,13 @@ def run(store: PgStore, market: KrakenPublic, healthcheck_url: str | None) -> No
         started = time.monotonic()
         now = datetime.now(UTC)
         try:
-            commands.process_pending(store, now)
+            repo = PaperRepo(store.connection())
+            commands.process_pending(store, now, repo)
             if started - last_sync >= SYNC_INTERVAL_S:
                 last_cycle = cycle(store, market, now)
+                feeds = last_cycle["feeds"]
+                assert isinstance(feeds, dict)
+                last_cycle["paper"] = paper.run_accounts(repo, feeds, datetime.now(UTC))
                 last_sync = started
             if started - last_beat >= HEARTBEAT_INTERVAL_S:
                 store.heartbeat(SERVICE, now, SCHEMA_VERSION, {"last_cycle": last_cycle})

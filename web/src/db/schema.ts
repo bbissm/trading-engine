@@ -6,7 +6,7 @@ import { boolean, bigserial, index, integer, jsonb, numeric, pgTable, primaryKey
  * bei jeder Migration SCHEMA_VERSION erhöhen (hier und in engine/src/tradingengine/schema_version.py).
  * Preise/Mengen sind `numeric` – nie Float. Zeitstempel immer UTC.
  */
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
 
 const price = (name: string) => numeric(name, { precision: 28, scale: 10 });
 const ts = (name: string) => timestamp(name, { withTimezone: true });
@@ -130,6 +130,8 @@ export const signals = pgTable(
     stop: price("stop"),
     target: price("target"),
     maxHoldBars: integer("max_hold_bars"),
+    /** Referenzniveau der Strategie (z. B. Ausbruchsniveau) für den Exit-Plan. */
+    refLevel: price("ref_level"),
     validUntil: ts("valid_until"),
     /** Beobachtbare Auslöser bzw. Gründe für NO_TRADE. */
     triggers: jsonb("triggers").$type<string[]>().notNull(),
@@ -186,4 +188,187 @@ export const auditEvents = pgTable(
     data: jsonb("data").$type<Record<string, unknown>>(),
   },
   (t) => [index("audit_ts_idx").on(t.ts)],
+);
+
+// ───────────────────────── Schema v2: Konten, Episoden, Orders, Fills, Trades (Etappe 2) ─────────────────────────
+
+const qty = (name: string) => numeric(name, { precision: 28, scale: 10 });
+const money = (name: string) => numeric(name, { precision: 28, scale: 10 });
+
+/** Geldtopf. Orders tragen Konto und Modus; die Migration erzwingt per Fremdschlüssel, dass beide zusammenpassen. */
+export const accounts = pgTable(
+  "account",
+  {
+    id: text("id").primaryKey(),
+    /** PAPER | LIVE */
+    mode: text("mode").notNull(),
+    name: text("name").notNull(),
+    currency: text("currency").notNull(),
+    createdAt: ts("created_at").notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("account_id_mode_idx").on(t.id, t.mode)],
+);
+
+/** Abschnitt eines Paper-Kontos. Ein Reset beendet die Episode und legt eine neue an; alte bleiben unverändert. */
+export const episodes = pgTable(
+  "episode",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    accountId: text("account_id").notNull().references(() => accounts.id),
+    number: integer("number").notNull(),
+    /** NEW | RESET */
+    reason: text("reason").notNull(),
+    startCash: money("start_cash").notNull(),
+    cash: money("cash").notNull(),
+    feesPaid: money("fees_paid").notNull().default("0"),
+    realized: money("realized").notNull().default("0"),
+    /** Risikopolicy, eingefroren beim Start der Episode. */
+    policy: jsonb("policy").$type<Record<string, unknown>>().notNull(),
+    strategyVersionIds: jsonb("strategy_version_ids").$type<string[]>().notNull(),
+    costModel: text("cost_model").notNull(),
+    simVersion: text("sim_version").notNull(),
+    /** Schluss der letzten 4h-Kerze, bis zu der die Simulation fortgeschrieben ist. */
+    simThrough: ts("sim_through").notNull(),
+    /** Signale mit created_at ≤ diesem Zeitpunkt sind für diese Episode abgearbeitet. */
+    signalsThrough: ts("signals_through").notNull(),
+    startedAt: ts("started_at").notNull().defaultNow(),
+    endedAt: ts("ended_at"),
+  },
+  (t) => [uniqueIndex("episode_account_number_idx").on(t.accountId, t.number)],
+);
+
+/** Zustand des Autopiloten je Konto (docs/01, 3.1). Der Verlauf steht im Auditprotokoll. */
+export const autopilots = pgTable("autopilot", {
+  accountId: text("account_id").primaryKey().references(() => accounts.id),
+  /** READY | ACTIVE | ENTRIES_PAUSED | WINDING_DOWN | STOPPED | ERROR */
+  state: text("state").notNull(),
+  reason: text("reason"),
+  updatedAt: ts("updated_at").notNull().defaultNow(),
+});
+
+/** Rundlauf Einstieg → Ausstieg. Offene Trades tragen ihren Exit-Plan bis zum Schluss. */
+export const trades = pgTable(
+  "trade",
+  {
+    id: text("id").primaryKey(),
+    accountId: text("account_id").notNull().references(() => accounts.id),
+    episodeId: integer("episode_id").notNull(),
+    instrumentId: text("instrument_id").notNull().references(() => instruments.id),
+    strategyVersionId: text("strategy_version_id").notNull().references(() => strategyVersions.id),
+    signalId: uuid("signal_id"),
+    timeframe: text("timeframe").notNull(),
+    /** OPEN | CLOSED */
+    status: text("status").notNull(),
+    openedAt: ts("opened_at").notNull(),
+    closedAt: ts("closed_at"),
+    qty: qty("qty").notNull(),
+    entryValue: money("entry_value").notNull(),
+    entryFees: money("entry_fees").notNull(),
+    exitValue: money("exit_value"),
+    exitFees: money("exit_fees"),
+    /** Nettoergebnis in Handelswährung (nur bei CLOSED). */
+    net: money("net"),
+    plannedStop: price("planned_stop").notNull(),
+    plannedRisk: money("planned_risk").notNull(),
+    currentStop: price("current_stop").notNull(),
+    highestClose: price("highest_close").notNull(),
+    barsHeld: integer("bars_held").notNull().default(0),
+    exitPlan: jsonb("exit_plan").$type<Record<string, unknown>>().notNull(),
+    exitReason: text("exit_reason"),
+    /** Schluss der letzten Kerze der Signal-Zeitebene, bis zu der die Position betreut wurde. */
+    managedThrough: ts("managed_through").notNull(),
+  },
+  (t) => [index("trade_account_idx").on(t.accountId, t.episodeId, t.status)],
+);
+
+/** Auftrag an Simulator bzw. Anbieter (docs/01, 3.4). `intent_key` macht jede wirtschaftliche Absicht eindeutig. */
+export const orders = pgTable(
+  "trade_order",
+  {
+    id: text("id").primaryKey(),
+    intentKey: text("intent_key").notNull(),
+    mode: text("mode").notNull(),
+    accountId: text("account_id").notNull(),
+    episodeId: integer("episode_id").notNull(),
+    instrumentId: text("instrument_id").notNull().references(() => instruments.id),
+    strategyVersionId: text("strategy_version_id").notNull().references(() => strategyVersions.id),
+    signalId: uuid("signal_id"),
+    tradeId: text("trade_id"),
+    timeframe: text("timeframe").notNull(),
+    /** BUY | SELL */
+    side: text("side").notNull(),
+    /** LIMIT | MARKET | STOP */
+    type: text("type").notNull(),
+    /** ENTRY | PROTECT | EXIT */
+    role: text("role").notNull(),
+    qty: qty("qty").notNull(),
+    limitPrice: price("limit_price"),
+    stopPrice: price("stop_price"),
+    /** PREPARED … UNKNOWN (engine/core/execution.py) */
+    state: text("state").notNull(),
+    exitPlan: jsonb("exit_plan").$type<Record<string, unknown>>(),
+    reason: text("reason"),
+    createdAt: ts("created_at").notNull(),
+    validUntil: ts("valid_until"),
+    updatedAt: ts("updated_at").notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("trade_order_intent_idx").on(t.intentKey), index("trade_order_account_idx").on(t.accountId, t.episodeId, t.state)],
+);
+
+/** Ausführung. Die gefüllte Menge einer Order ist die Summe ihrer Fills. Append-only. */
+export const fills = pgTable(
+  "fill",
+  {
+    id: text("id").primaryKey(),
+    orderId: text("order_id").notNull().references(() => orders.id),
+    qty: qty("qty").notNull(),
+    price: price("price").notNull(),
+    fee: money("fee").notNull(),
+    feeCurrency: text("fee_currency").notNull(),
+    time: ts("time").notNull(),
+    /** true = vom Simulator erzeugt, false = vom Anbieter beobachtet */
+    simulated: boolean("simulated").notNull(),
+  },
+  (t) => [index("fill_order_idx").on(t.orderId)],
+);
+
+/** Reserviertes Kapital und Risiko offener Einstiegsorders. */
+export const reservations = pgTable("reservation", {
+  intentKey: text("intent_key").primaryKey(),
+  accountId: text("account_id").notNull().references(() => accounts.id),
+  episodeId: integer("episode_id").notNull(),
+  instrumentId: text("instrument_id").notNull(),
+  qty: qty("qty").notNull(),
+  cash: money("cash").notNull(),
+  risk: money("risk").notNull(),
+});
+
+/** Bewertung je simuliertem Kerzenschluss: Grundlage für Kurve, Tagesverlust und Drawdown. Append-only. */
+export const equitySnapshots = pgTable(
+  "equity_snapshot",
+  {
+    accountId: text("account_id").notNull().references(() => accounts.id),
+    episodeId: integer("episode_id").notNull(),
+    ts: ts("ts").notNull(),
+    equity: money("equity").notNull(),
+    cash: money("cash").notNull(),
+    invested: money("invested").notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.accountId, t.episodeId, t.ts] })],
+);
+
+/** Was aus einem Signal für ein Konto wurde (Order erteilt oder blockiert, mit Gründen). Append-only. */
+export const signalOutcomes = pgTable(
+  "signal_outcome",
+  {
+    signalId: uuid("signal_id").notNull().references(() => signals.id),
+    accountId: text("account_id").notNull().references(() => accounts.id),
+    episodeId: integer("episode_id").notNull(),
+    /** ORDERED | BLOCKED */
+    status: text("status").notNull(),
+    reasons: jsonb("reasons").$type<string[]>().notNull(),
+    values: jsonb("values").$type<Record<string, string>>().notNull(),
+    createdAt: ts("created_at").notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.signalId, t.accountId, t.episodeId] })],
 );

@@ -11,6 +11,7 @@ Konservative, dokumentierte Annahmen – ein Modell, kein Nachweis echter Ausfü
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import timedelta
 from decimal import ROUND_DOWN, Decimal
 
 from .candles import Candle
@@ -23,6 +24,9 @@ class SimConfig:
     version: str = "sim@1"
     participation: Decimal = Decimal("0.01")  # max. Anteil am Kerzenvolumen je Einstiegsorder
     qty_step: Decimal = Decimal("0.00000001")
+    # Eine Order, die bis zu dieser Frist nach Kerzenbeginn erteilt wurde, nimmt an der Kerze teil
+    # (Signal kurz nach Kerzenschluss → Order in der Folgekerze). Später erteilte warten auf die nächste Kerze.
+    entry_grace: timedelta = timedelta(minutes=5)
 
 
 # Realismus-Karte: was der Simulator abbildet und was fehlt (wird im Paper-Lab angezeigt).
@@ -61,7 +65,7 @@ def _fill(order: Order, candle: Candle, qty: Decimal, price: Decimal, model: Cos
 
 def simulate(order: Order, candle: Candle, model: CostModel, cfg: SimConfig, currency: str) -> Fill | None:
     """Möglicher Fill einer arbeitenden Order innerhalb einer Kerze, die *nach* der Ordererteilung begann."""
-    if candle.open_time < order.created_at:
+    if candle.open_time + cfg.entry_grace < order.created_at:
         return None  # eine Order handelt nie rückwirkend vor ihrer Entstehung
     remaining = order.remaining_qty
     if remaining <= 0:
