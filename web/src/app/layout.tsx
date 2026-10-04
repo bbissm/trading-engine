@@ -1,5 +1,7 @@
 import type { Metadata, Viewport } from "next";
+import Link from "next/link";
 import { AppShell } from "@/components/app-shell";
+import { Icon } from "@/components/icons";
 import { LogoutButton } from "@/components/logout-button";
 import { ThemeToggle, themeInitScript } from "@/components/theme-toggle";
 import "./globals.css";
@@ -35,6 +37,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           navActions={
             <>
               <ThemeToggle />
+              {process.env.TE_PASSWORD && (
+                <Link href="/settings/security" title="Sicherheit" aria-label="Sicherheit" className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-line bg-surface text-muted hover:text-ink">
+                  <Icon name="shield" size={15} />
+                </Link>
+              )}
               {process.env.TE_PASSWORD && <LogoutButton />}
             </>
           }

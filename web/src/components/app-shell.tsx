@@ -7,9 +7,10 @@ import { APP_NAME } from "@/lib/nav";
 import { MobileTabBar, MobileTopBar } from "./mobile-shell";
 import { Nav } from "./nav";
 
-/** Top navigation on desktop, top bar + tab bar on phones; the login page gets no chrome. */
+/** Top navigation on desktop, top bar + tab bar on phones; login and first-time setup get no chrome. */
 export function AppShell({ children, navActions }: { children: ReactNode; navActions?: ReactNode }) {
-  if (usePathname().startsWith("/login")) return <>{children}</>;
+  const pathname = usePathname();
+  if (pathname.startsWith("/login") || pathname.startsWith("/setup")) return <>{children}</>;
   return (
     <>
       <MobileTopBar />

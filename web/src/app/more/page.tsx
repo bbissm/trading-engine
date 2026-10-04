@@ -27,6 +27,14 @@ export default function MorePage() {
         <span className="text-[15px] font-medium">Farbschema</span>
         <ThemeToggle />
       </div>
+      {process.env.TE_PASSWORD && (
+        <Link href="/settings/security" className="flex min-h-14 items-center gap-3 rounded-xl border border-line bg-surface px-4 active:bg-surface-2">
+          <Icon name="shield" size={22} className="text-muted" />
+          <span className="text-[15px] font-medium">Sicherheit</span>
+          <span className="text-xs text-muted">Passkeys, TOTP, Sitzungen</span>
+          <Icon name="chevronRight" size={18} className="ml-auto text-muted" />
+        </Link>
+      )}
       {process.env.TE_PASSWORD && <LogoutButton variant="row" />}
     </div>
   );
