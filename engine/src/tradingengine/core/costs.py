@@ -19,6 +19,15 @@ class CostModel:
     def fee(self, notional: Decimal, taker: bool) -> Decimal:
         return notional * (self.taker_bps if taker else self.maker_bps) / BPS
 
+    def order_fee(self, qty: Decimal, price: Decimal, taker: bool) -> Decimal:
+        """Gebühr einer Ausführung über `qty` Einheiten. Modelle mit Gebühr je Stück oder Mindestgebühr überschreiben das."""
+        return self.fee(qty * price, taker)
+
+    @property
+    def linear(self) -> bool:
+        """True, wenn die Gebühr proportional zum Wert ist (keine Mindest- oder Stückgebühr)."""
+        return True
+
     def scaled(self, factor: Decimal) -> CostModel:
         """Für Sensitivitätsläufe (Kosten × 1.5, × 2)."""
         return CostModel(f"{self.version}×{factor}", self.maker_bps * factor, self.taker_bps * factor, self.slippage_bps * factor)

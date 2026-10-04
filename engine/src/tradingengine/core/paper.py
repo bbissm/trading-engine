@@ -270,7 +270,7 @@ def step_candle(
                 if candle.low <= trade.stop:
                     stop_po = state.orders[f"{trade.id}-stop"]
                     price = trade.stop * (1 - model.slippage_bps / BPS)
-                    stop_fill = Fill(f"{stop_po.order.id}:1", stop_po.order.id, trade.qty, price, model.fee(trade.qty * price, True), currency, close_time)
+                    stop_fill = Fill(f"{stop_po.order.id}:1", stop_po.order.id, trade.qty, price, model.order_fee(trade.qty, price, True), currency, close_time)
                     if entry.order.is_working:
                         _cancel(state, entry, close_time, "Stop in der Einstiegskerze")
                     _sell(state, stop_po, trade, stop_fill, "Stop (in der Einstiegskerze)")

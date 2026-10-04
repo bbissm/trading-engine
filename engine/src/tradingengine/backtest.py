@@ -190,7 +190,7 @@ def run_backtest(
             if candle.low <= managed.stop:
                 price = managed.stop * (1 - model.slippage_bps / BPS)
                 qty = held()
-                stop_fill = Fill(f"{stop_order.id}:1", stop_order.id, qty, price, model.fee(qty * price, True), cfg.currency, candle.close_time)
+                stop_fill = Fill(f"{stop_order.id}:1", stop_order.id, qty, price, model.order_fee(qty, price, True), cfg.currency, candle.close_time)
                 if entry_order.is_working:  # Rest des Einstiegs nicht weiter verfolgen
                     request_cancel(entry_order, candle.close_time)
                     confirm_cancel(entry_order, candle.close_time)

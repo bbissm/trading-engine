@@ -85,3 +85,22 @@ Der Paper-Autopilot läuft im Minuten-Tick, die Simulation selbst schreitet aber
 
 Noch offen in Etappe 2: Benachrichtigungen (E2-9), Journal mit CHF-Bewertung und Exporten (E2-10/E2-12),
 laufender Verlustgrenzen-Wächter mit Zustandswechsel, Backtest-Oberfläche mit Baselines und Sensitivitäten.
+
+## E-7 · US-Aktien/ETFs auf Tageskerzen von Alpaca; Paper-Konten je Anlageklasse (4.10.2026)
+
+- **Daten:** Alpaca Basic (Paper-only-Konto), `GET /v2/stocks/bars`, `timeframe=1Day`, `feed=sip`,
+  `adjustment=split`, `end` mindestens 16 min in der Vergangenheit. Abruf frühestens 20 min nach
+  Sitzungsschluss, einmal pro Sitzung; Historie ab 2016 seitenweise mit höchstens 20 s je Tick, fortsetzbar.
+  Die Kerze einer Sitzung trägt Sitzungsbeginn und -schluss (09:30–16:00 bzw. 13:00 New York) aus dem
+  Alpaca-Kalender; ohne Abruf gilt ein regelbasierter NYSE-Kalender (`calendar_us.py`).
+- **Verzerrungen (bewusst):** Alpaca rechnet Splits mit dem heutigen Faktor rückwirkend ein (keine
+  Punkt-in-Zeit-Kurse); Dividenden fehlen in Signalen und Paper. Ändert sich eine gespeicherte Kerze durch
+  einen neuen Split, geht der Feed auf ERROR, bis die Historie neu geladen ist. Survivorship wie docs/04, 4.2.
+- **Qualität:** STALE erst 2 h nach Sitzungsschluss; Lücken nur an Handelstagen.
+- **Signale:** gültig bis zum Schluss der nächsten Sitzung (nicht 24 h); die Order füllt frühestens zur
+  Eröffnung der Folgesitzung.
+- **Paper:** Aktien laufen in eigenen Paper-Konten mit dem Kostenmodell `ibkr-fixed-us@2026-10`
+  (USD 0.005/Aktie, min. USD 1, max. 1 %; Slippage-Annahme 5 bp) und dem Simulator `sim-stocks@1`
+  (ganze Stücke). Abweichend von E-6 schreiten sie je Sitzungsschluss fort, nicht je 4h-Kerze: ein Stop
+  nach einer Lücke über Nacht füllt zur Eröffnung. Ein Konto mischt keine Anlageklassen, weil Kosten,
+  Handelszeiten und später der Broker verschieden sind.

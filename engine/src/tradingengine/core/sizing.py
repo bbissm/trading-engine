@@ -8,7 +8,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from decimal import ROUND_DOWN, Decimal
 
-from .costs import CostModel, plan_costs
+from .costs import BPS, CostModel, plan_costs
 
 
 @dataclass(frozen=True, slots=True)
@@ -51,6 +51,19 @@ def size_position(
     if risk_budget <= 0 or max_notional <= 0:
         return Sizing(zero, zero, zero, "Kein Risiko- oder Kapitalbudget frei")
     qty = _floor(min(risk_budget / risk_per_unit, max_notional / entry), spec.qty_step)
-    if qty < spec.min_qty or qty * entry < spec.min_notional:
+    if not model.linear:
+        # Gebühr je Order mit Mindestbetrag (z. B. IBKR): Menge verkleinern, bis das Gesamtrisiko passt.
+        while qty >= spec.min_qty and qty > 0:
+            risk = order_risk(model, qty, entry, stop)
+            if risk <= risk_budget:
+                break
+            qty -= max(spec.qty_step, _floor((risk - risk_budget) / risk_per_unit, spec.qty_step))
+    if qty < spec.min_qty or qty <= 0 or qty * entry < spec.min_notional:
         return Sizing(zero, zero, zero, "Menge unter der Mindestgrösse des Handelsplatzes")
-    return Sizing(qty, qty * entry, qty * risk_per_unit)
+    return Sizing(qty, qty * entry, qty * risk_per_unit if model.linear else order_risk(model, qty, entry, stop))
+
+
+def order_risk(model: CostModel, qty: Decimal, entry: Decimal, stop: Decimal) -> Decimal:
+    """Geplantes Verlustrisiko einer ganzen Order: Kursrisiko + Einstiegsgebühr + Slippage + Stop-Gebühr."""
+    stop_fill = stop * (1 - model.slippage_bps / BPS)
+    return qty * (entry - stop_fill) + model.order_fee(qty, entry, False) + model.order_fee(qty, stop_fill, True)

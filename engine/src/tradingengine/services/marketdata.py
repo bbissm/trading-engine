@@ -44,11 +44,13 @@ def assess(store: Store, instrument: Instrument, timeframe: str, now: datetime) 
     return "OK", None, last_close
 
 
-def sync_once(store: Store, market: MarketData, timeframes: list[str], now: datetime) -> SyncResult:
-    """Holt abgeschlossene Kerzen für das Universum und speichert nur neue."""
+def sync_once(
+    store: Store, market: MarketData, timeframes: list[str], now: datetime, instruments: list[Instrument] | None = None
+) -> SyncResult:
+    """Holt abgeschlossene Kerzen für das Universum (oder nur `instruments`) und speichert nur neue."""
     result = SyncResult()
     known = store.feed_statuses(market.source)
-    for instrument in store.universe():
+    for instrument in store.universe() if instruments is None else instruments:
         for timeframe in timeframes:
             key = key_of(instrument.id, timeframe)
             try:
