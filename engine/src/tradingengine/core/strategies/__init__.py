@@ -1,0 +1,1 @@
+"""Startstrategien (Forschungskandidaten, kein Qualitätsnachweis)."""

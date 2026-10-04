@@ -1,0 +1,26 @@
+# Engine-Server. In dieser Etappe ein einziger Dienst ohne Orderweg und ohne Handels-Zugangsdaten.
+# Lokal:   docker compose --profile local up     (startet zusätzlich ein Postgres für die Entwicklung)
+# Server:  docker compose up -d engine           (DATABASE_URL zeigt auf die gehostete Datenbank)
+services:
+  engine:
+    build: ./engine
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL fehlt}
+      HEALTHCHECK_URL: ${HEALTHCHECK_URL:-}
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "5" }
+
+  db:
+    profiles: ["local"]
+    image: postgres:17
+    environment:
+      POSTGRES_PASSWORD: dev
+    ports:
+      - "127.0.0.1:55432:5432"
+    volumes:
+      - te-local-db:/var/lib/postgresql/data
+
+volumes:
+  te-local-db:

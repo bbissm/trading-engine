@@ -26,12 +26,12 @@ Vor Aufnahme eines weiteren Features: Korrelation zu bestehenden prüfen (|ρ| >
 
 | Regime | Regel (Startdefinition, als Version geführt) |
 |---|---|
-| Stress | realisierte Vola > 90. Perzentil **oder** Drawdown vom 60-Tage-Hoch > 2.5 × ATR-Tagesäquivalent **oder** Datenlücke/Handelsunterbruch |
+| Stress | realisierte 20-Tage-Vola > 90. Perzentil des letzten Jahres **oder** Rückgang über 5 Tage > 4 × ATR(14) von vor dem Rückgang. Datenlücken und Handelsunterbrüche sperren Signale separat über den Feed-Status. |
 | Aufwärtstrend | Schluss > SMA200, SMA50 steigend, ADX ≥ 20 |
 | Abwärtstrend | Schluss < SMA200, SMA50 fallend, ADX ≥ 20 |
 | Seitwärts | sonst (ADX < 20) |
 
-Stress hat Vorrang. Die Regimeregel ist selbst ein versioniertes Objekt und wird nicht pro Strategie optimiert (sonst vervielfacht sich der Suchraum).
+Stress hat Vorrang. Die zuerst skizzierte Stress-Regel (Abstand zum 60-Tage-Hoch > 2.5 × ATR) wurde bei der Umsetzung – vor jeder Auswertung echter Daten – ersetzt: Sie hätte gewöhnliche Rücksetzer im Aufwärtstrend als Stress eingestuft und damit die Pullback-Strategie S1 strukturell blockiert. Die Regimeregel ist selbst ein versioniertes Objekt (`regime@1`) und wird nicht pro Strategie optimiert (sonst vervielfacht sich der Suchraum).
 
 ## 2. Startstrategien
 
