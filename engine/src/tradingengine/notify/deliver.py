@@ -154,8 +154,8 @@ def _process(run: _Run, a: dict[str, Any], quiet: bool, quiet_end: datetime | No
             return
         text, subject = _text(a), _subject(a)
         sent = [run.attempt(aid, "TELEGRAM", lambda: tg.send(text, _buttons(a))),
-                   run.attempt(aid, "PUSHOVER", lambda: po.send(subject, a["body"], 2, PUSHOVER_RETRY_S, TEST_EXPIRE_S)),
-                   run.attempt(aid, "EMAIL", lambda: em.send(subject, text))]
+                run.attempt(aid, "PUSHOVER", lambda: po.send(subject, a["body"], 2, PUSHOVER_RETRY_S, TEST_EXPIRE_S)),
+                run.attempt(aid, "EMAIL", lambda: em.send(subject, text))]
         _done(run, a, 1, None, sent)
         return
 
