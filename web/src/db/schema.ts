@@ -7,7 +7,7 @@ import { boolean, bigserial, index, integer, jsonb, numeric, pgTable, primaryKey
  * bei jeder Migration SCHEMA_VERSION erhöhen (hier und in engine/src/tradingengine/schema_version.py).
  * Preise/Mengen sind `numeric` – nie Float. Zeitstempel immer UTC.
  */
-export const SCHEMA_VERSION = 3;
+export const SCHEMA_VERSION = 4;
 
 const price = (name: string) => numeric(name, { precision: 28, scale: 10 });
 const ts = (name: string) => timestamp(name, { withTimezone: true });

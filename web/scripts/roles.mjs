@@ -62,6 +62,11 @@ const COLUMN_GRANTS = [
   `grant update (permissions) on account to te_engine`,
 ];
 
+// Anmeldetabellen (Better Auth, E0-4): Passwort-Hash, TOTP-Geheimnis, Sitzungstoken. Die Engine braucht sie nie
+// und darf sie nicht einmal lesen – das pauschale «grant select» oben wird dafür ausdrücklich zurückgenommen.
+// Muss mit AUTH_TABLES in src/db/auth-schema.ts übereinstimmen (Test: src/lib/auth/auth-tables.test.ts).
+const AUTH_TABLES = ["auth_user", "auth_session", "auth_account", "auth_verification", "auth_two_factor", "auth_passkey", "auth_rate_limit"];
+
 const statements = [
   `do $$ begin
      if not exists (select from pg_roles where rolname = '${ROLE}') then
@@ -76,6 +81,7 @@ const statements = [
   `grant usage, select on all sequences in schema public to ${ROLE}`,
   ...Object.entries(GRANTS).map(([table, privileges]) => `grant ${privileges} on "${table}" to ${ROLE}`),
   ...COLUMN_GRANTS,
+  ...AUTH_TABLES.map((table) => `revoke all privileges on "${table}" from ${ROLE}`),
 ];
 
 if (/\.neon\.tech|neon\.build/.test(url)) {

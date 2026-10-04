@@ -104,3 +104,30 @@ laufender Verlustgrenzen-Wächter mit Zustandswechsel, Backtest-Oberfläche mit 
   (ganze Stücke). Abweichend von E-6 schreiten sie je Sitzungsschluss fort, nicht je 4h-Kerze: ein Stop
   nach einer Lücke über Nacht füllt zur Eröffnung. Ein Konto mischt keine Anlageklassen, weil Kosten,
   Handelszeiten und später der Broker verschieden sind.
+
+## E0-4 · Anmeldung mit Better Auth: Umsetzung und Abweichungen (4.10.2026)
+
+Umgesetzt mit Better Auth 1.7 (Drizzle-Adapter, Plugins two-factor und passkey, eigene Plugins für Step-up
+und für die Ein-Benutzer-Regeln). Abweichungen und Präzisierungen gegenüber docs/05, Abschnitt 4.2:
+
+- **Step-up mit Passkey oder TOTP**, nicht nur Passkey: sonst wäre ohne Passkey (z. B. Telefon verloren)
+  keine heikle Aktion mehr möglich. Beide verlangen einen frischen Nachweis; TOTP-Codes gelten im Step-up nur
+  einmal. Der Zeitpunkt liegt je Sitzung in `auth_session.step_up_at`, geprüft mit `requireStepUp()`
+  (Standard 300 s; `TE_STEP_UP_MAX_AGE_SECONDS` kann nur verkürzen).
+- **Passkey allein genügt zur Anmeldung**, aber nur mit Benutzerverifikation (PIN/Biometrie); ein Passkey
+  lässt sich erst nach eingerichtetem TOTP hinzufügen. Passwort + TOTP (oder Backup-Code) bleibt Rückfallweg.
+- **Passwort aus der Umgebung ist massgebend** (`TE_PASSWORD`): der Hash in `auth_account` wird beim Login
+  nachgezogen, ein altes Passwort gilt nach einer Änderung nicht mehr. Passwort ändern/zurücksetzen über die
+  App gibt es nicht. Genau eine E-Mail (`TE_ADMIN_EMAIL`); existiert schon ein Benutzer mit anderer E-Mail,
+  wird kein zweiter angelegt (E-Mail-Wechsel nur bewusst in der DB).
+- **TOTP lässt sich nicht abschalten**; Backup-Codes neu erzeugen und Passkeys entfernen verlangen Step-up,
+  Passkey hinzufügen ausserhalb der ersten 10 Minuten einer Sitzung ebenfalls.
+- **Neon-HTTP ohne Transaktionen**: Adapter mit `transaction: false`; die genutzten Abläufe brauchen keine.
+  Rate-Limits liegen in der DB (`auth_rate_limit`), weil Serverless-Instanzen keinen Speicher teilen.
+- **Proxy prüft die Sitzung bei jeder Anfrage in der DB** (Node.js-Runtime, kein Cookie-Cache), damit ein
+  Widerruf sofort wirkt – bewusst gegen die Empfehlung von Next.js, im Proxy nur optimistisch zu prüfen.
+- **Skripte**: nur `/api/ops/*` mit `Authorization: Bearer <TE_API_TOKEN>`; Basic Auth entfällt.
+  Token-Anfragen haben keine Sitzung und bestehen darum nie einen Step-up.
+- Die Engine-Rolle hat auf die `auth_*`-Tabellen keinerlei Rechte (ausdrückliches `revoke` in
+  `scripts/roles.mjs`). Anmeldeereignisse stehen wie alle anderen in `audit_event` (für die Engine lesbar,
+  ohne Geheimnisse: Art, Methode, IP, User-Agent).

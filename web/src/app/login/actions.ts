@@ -1,26 +1,18 @@
 "use server";
 
-import { cookies } from "next/headers";
+import { headers } from "next/headers";
 import { redirect } from "next/navigation";
-import { checkCredentials, createSessionToken, SESSION_COOKIE, sessionCookieOptions } from "@/lib/session";
+import { authMode } from "@/lib/auth/config";
+import { getAuth } from "@/lib/auth/server";
 
-/** Only internal paths as redirect target (no open redirect). */
-const safeNext = (next: string) => (next.startsWith("/") && !next.startsWith("//") && !next.startsWith("/login") ? next : "/");
-
-export async function loginAction(_prev: { error?: string } | undefined, form: FormData): Promise<{ error?: string }> {
-  const user = String(form.get("user") ?? "");
-  const password = String(form.get("password") ?? "");
-  if (!checkCredentials(user, password)) {
-    // slows down guessing
-    await new Promise((r) => setTimeout(r, 800));
-    return { error: "Benutzer oder Passwort falsch." };
-  }
-  const { token, expires } = await createSessionToken();
-  (await cookies()).set(SESSION_COOKIE, token, sessionCookieOptions(expires));
-  redirect(safeNext(String(form.get("next") ?? "/")));
-}
-
+/** Abmelden: beendet diese Sitzung (DB) und löscht die Cookies (nextCookies-Plugin). */
 export async function logoutAction() {
-  (await cookies()).delete(SESSION_COOKIE);
+  if (authMode().mode === "enabled") {
+    try {
+      await getAuth().api.signOut({ headers: await headers() });
+    } catch (e) {
+      console.error("[logout]", e);
+    }
+  }
   redirect("/login");
 }

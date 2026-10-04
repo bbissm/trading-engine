@@ -27,9 +27,14 @@ DATABASE_URL=postgres://postgres:dev@localhost:5432/postgres pnpm db:migrate
 | Variable | Zweck |
 |---|---|
 | `DATABASE_URL` (ersatzweise `POSTGRES_URL`) | Postgres. Neon-URLs nutzen den HTTP-Treiber, alle anderen `pg` |
-| `TE_PASSWORD` | Passwort des Übergangs-Logins. Ohne Passwort ist die App lokal offen; auf Vercel antwortet sie mit 503 |
-| `TE_USER` (optional, Standard `admin`) | Benutzername; erscheint als `user:<name>` in `command.issued_by` und `audit_event.actor` |
-| `SESSION_SECRET` (optional) | Zusätzliches Geheimnis für die Session-Signatur. Ändern meldet alle Geräte ab |
+| `TE_PASSWORD` | Passwort des einzigen Benutzers (massgebend; der gespeicherte Hash wird beim Login nachgezogen). Ohne Passwort ist die App lokal offen; auf Vercel (production/preview) antwortet sie mit 503 |
+| `TE_ADMIN_EMAIL` | Einzige zugelassene E-Mail-Adresse. Erster Login damit legt den Benutzer an; Registrierung sonst gesperrt |
+| `BETTER_AUTH_SECRET` | Geheimnis von Better Auth (Cookie-Signatur, Verschlüsselung von TOTP-Geheimnis und Backup-Codes), ≥ 32 zufällige Zeichen, z. B. `openssl rand -base64 32`. Ändern macht TOTP unlesbar → nie ändern ohne Neueinrichtung |
+| `BETTER_AUTH_URL` | Öffentliche Basis-URL, z. B. `https://trading-engine.example.ch`. Bestimmt Passkey-Origin und RP-ID (Host) |
+| `TE_API_TOKEN` (optional) | Maschinenzugang für `/api/ops/*`: `Authorization: Bearer <Token>`, mind. 32 Zeichen. Ohne Token kein Skriptzugang |
+| `TE_PASSKEY_RP_ID` (optional) | RP-ID der Passkeys, falls abweichend vom Host aus `BETTER_AUTH_URL` (z. B. registrierbare Domain). Ändern macht bestehende Passkeys unbrauchbar |
+| `TE_STEP_UP_MAX_AGE_SECONDS` (optional, nur Tests) | Verkürzt das Step-up-Fenster (Standard 300 s); kann es nie verlängern |
+| `TE_USER` (optional) | Kennung in `command.issued_by` und fachlichen Audit-Einträgen (`user:<name>`); Standard: lokaler Teil von `TE_ADMIN_EMAIL`, sonst `admin`. Anmeldeereignisse nutzen `user:<email>` |
 | `DATABASE_POOL_MAX` (optional) | Poolgrösse für `pg`, Standard 5 |
 | `TE_ENGINE_DB_PASSWORD` (optional) | Passwort der Datenbankrolle `te_engine` (mind. 32 alphanumerische Zeichen). Ist es gesetzt, legt der Vercel-Build die Rolle mit minimalen Rechten an |
 
@@ -51,9 +56,15 @@ Die Schema-Hoheit liegt in `src/db/schema.ts`. Die Engine liest und schreibt die
 - Nur additive Änderungen. Bei jeder Migration `SCHEMA_VERSION` erhöhen, hier und in `engine/src/tradingengine/schema_version.py`, und in der Migration `schema_meta.version` nachziehen.
 - Preise und Mengen sind `numeric` und kommen als String an. Anzeige über `decimal()`/`price()` in `src/lib/format.ts`, keine Float-Rechnung mit Geld. Einzige Ausnahme: der Chart erhält Zahlen zum Zeichnen.
 
-## Anmeldung (Übergangslösung)
+## Anmeldung (E0-4, Better Auth)
 
-**TODO (Plan-Task E0-4):** Der Login ist derselbe Ein-Benutzer-Mechanismus wie im Control Center (Passwort aus der Umgebung, signiertes HttpOnly-Cookie, Schutz über `src/proxy.ts`). Er **muss durch Passkey + TOTP + Step-up (Better Auth) ersetzt werden, bevor irgendein Bedienelement für den Live-Handel existiert.** Bis dahin darf die App nur lesen und den harmlosen `PING` senden.
+- Genau ein Benutzer (`TE_ADMIN_EMAIL` + `TE_PASSWORD`). Beim ersten Login wird **TOTP** eingerichtet (QR-Code, Backup-Codes einmalig), vorher ist nichts anderes erreichbar (`/setup`). Danach wird ein **Passkey** empfohlen; mit Passkey genügt er allein, sonst Passwort + TOTP oder Backup-Code.
+- Sitzungen: HttpOnly-, Secure-, SameSite=Lax-Cookies, 30 Tage gleitend, in der DB (`auth_session`); der Proxy (`src/proxy.ts`, Node.js-Runtime) prüft jede Anfrage. Rate-Limits von Better Auth in `auth_rate_limit`.
+- **Step-up** für heikle Aktionen: serverseitig `requireStepUp()` aus `src/lib/auth/step-up.ts`, im Client `useStepUp()` / `<StepUpDialog>` aus `src/components/step-up.tsx` («Bestätigen mit Passkey oder TOTP», gilt 5 Minuten je Sitzung).
+- `/settings/security`: Passkeys (Entfernen mit Step-up), TOTP-Status und neue Backup-Codes (Step-up), aktive Sitzungen mit «Beenden» und «Überall abmelden», letzte Anmeldungen aus `audit_event`.
+- Skripte: `/api/ops/*` mit `Authorization: Bearer $TE_API_TOKEN`. Basic Auth gibt es nicht mehr. `/api/auth/*`, `/api/telegram` und `/api/cron/*` schützt der Proxy nicht (authentisieren sich selbst).
+- Datenbank: Tabellen `auth_*` (`src/db/auth-schema.ts`), Drizzle-Adapter ohne Transaktionen (Neon-HTTP). Die Engine-Rolle hat darauf keine Rechte.
+- Details und Abweichungen vom Plan: `docs/11-entscheide.md`, Abschnitt E0-4.
 
 ## Aufbau
 
