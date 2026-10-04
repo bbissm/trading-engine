@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 from datetime import datetime
-from decimal import Decimal
+from decimal import ROUND_DOWN, Decimal
 
 from .. import indicators as ind
 from ..candles import Candle
@@ -40,8 +40,9 @@ VERSION = StrategyVersion(
 )
 
 
-def _price(x: float) -> Decimal:
-    return Decimal(str(round(x, 8)))
+def _price_like(x: float, reference: Decimal) -> Decimal:
+    """Preis in der Genauigkeit des Referenzkurses (Stops ohne Schein-Nachkommastellen), abgerundet."""
+    return Decimal(str(x)).quantize(Decimal(1).scaleb(reference.as_tuple().exponent), rounding=ROUND_DOWN)  # type: ignore[arg-type]
 
 
 def _no_trade(t: datetime, regime: Regime, reason: str) -> Decision:
@@ -137,8 +138,8 @@ def decide(
                 triggers=triggers,
                 counter=counter,
                 score=max(0, min(100, round(score))),
-                entry=_price(close[i]),
-                stop=_price(close[i] - params.stop_atr * atr_i),
+                entry=candle.close,
+                stop=_price_like(close[i] - params.stop_atr * atr_i, candle.close),
                 target=None,  # Ausstieg über Trailing-Stop (trail_atr), kein festes Ziel
                 max_hold_bars=params.max_hold_bars,
             )

@@ -2,7 +2,7 @@
 
 Persönliche Handelsplattform für Aktien, ETFs und Crypto-Spot: Marktbeobachtung, nachvollziehbare Signale, Paper-Autopilot mit virtuellem Kapital, Lernlabor und – erst nach ausdrücklicher Aktivierung – begrenzter Live-Autopilot über eigene Konten. «TradingEngine» ist ein Arbeitstitel.
 
-**Status:** Planung (Stand 4. Oktober 2026). Es existiert noch kein Code. Es ist kein Broker- oder Exchange-Konto verbunden und kein Echtgeldhandel aktiviert.
+**Status (4. Oktober 2026):** Plan vollständig; erster vertikaler Schnitt umgesetzt – Signalbetrieb mit öffentlichen Kraken-Marktdaten, Strategie S1 als ungeprüfter Signalgeber, Dashboard zum Lesen. Es gibt keinen Orderweg, kein verbundenes Broker- oder Exchange-Konto und keinen Echtgeldhandel. Einrichtung: [docs/10-betrieb.md](docs/10-betrieb.md); Code: [`engine/`](engine/README.md), [`web/`](web/README.md).
 
 Technische Funktion, belegte Strategiequalität und Echtgeld-Freigabe sind drei getrennte Dinge und werden getrennt abgenommen. Nichts in diesem Repository ist ein Gewinnversprechen.
 
