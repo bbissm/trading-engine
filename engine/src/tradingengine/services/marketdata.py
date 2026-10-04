@@ -6,7 +6,7 @@ import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 
-from ..core.candles import find_gaps, floor_time
+from ..core.candles import find_gaps, floor_time, timeframe_delta
 from ..ports import Instrument, MarketData, Store
 
 log = logging.getLogger(__name__)
@@ -47,11 +47,16 @@ def assess(store: Store, instrument: Instrument, timeframe: str, now: datetime) 
 def sync_once(store: Store, market: MarketData, timeframes: list[str], now: datetime) -> SyncResult:
     """Holt abgeschlossene Kerzen für das Universum und speichert nur neue."""
     result = SyncResult()
+    known = store.feed_statuses(market.source)
     for instrument in store.universe():
         for timeframe in timeframes:
             key = key_of(instrument.id, timeframe)
             try:
                 last_open = store.last_candle_open(instrument.id, timeframe)
+                # Die nächste Kerze schliesst bei last_open + 2 Perioden; vorher gibt es nichts Neues abzurufen.
+                if last_open is not None and key in known and known[key] == "OK" and now < last_open + 2 * timeframe_delta(timeframe):
+                    result.status[key] = "OK"
+                    continue
                 fetched = market.fetch_closed_candles(instrument, timeframe, now)
                 fresh = [c for c in fetched if last_open is None or c.open_time > last_open]
                 if store.insert_candles(fresh, available_at=now):

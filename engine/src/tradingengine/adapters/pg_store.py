@@ -141,6 +141,21 @@ class PgStore:
             (feed, instrument_id, timeframe, status, detail, last_candle_close, ok_at),
         )
 
+    def feed_statuses(self, feed: str) -> dict[str, str]:
+        rows = self._c().execute("select instrument_id, timeframe, status from feed_status where feed = %s", (feed,)).fetchall()
+        return {f"{r['instrument_id']}|{r['timeframe']}": r["status"] for r in rows}
+
+    def latest_signal_counts(self) -> dict[str, tuple[datetime, int]]:
+        rows = self._c().execute(
+            """
+            select l.instrument_id, l.timeframe, l.last_close,
+                   (select count(*) from signal s where s.instrument_id = l.instrument_id
+                      and s.timeframe = l.timeframe and s.candle_close = l.last_close) as n
+            from (select instrument_id, timeframe, max(close_time) as last_close from candle group by 1, 2) l
+            """
+        ).fetchall()
+        return {f"{r['instrument_id']}|{r['timeframe']}": (r["last_close"], int(r["n"])) for r in rows}
+
     def ensure_strategy_version(self, version: StrategyVersion) -> None:
         self._c().execute(
             """

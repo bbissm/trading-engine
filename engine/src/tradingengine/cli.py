@@ -24,6 +24,8 @@ import httpx
 from .adapters import kraken_archive
 from .adapters.kraken_public import KrakenPublic
 from .adapters.pg_store import PgStore
+from .core.candles import timeframe_delta
+from .core.strategies import ACTIVE
 from .ports import Instrument, MarketData, Store
 from .schema_version import SCHEMA_VERSION
 from .services import commands, marketdata, signals
@@ -37,18 +39,48 @@ SYNC_INTERVAL_S = 60.0
 HEARTBEAT_INTERVAL_S = 30.0
 
 
-def all_keys(store: Store) -> set[str]:
-    return {marketdata.key_of(i.id, tf) for i in store.universe() for tf in SIGNAL_TIMEFRAMES}
+def open_keys(store: Store, now: datetime) -> set[str]:
+    """Zeitebenen, deren letzte Kerze noch gültig ist und der Entscheidungen fehlen (aus der Datenbank
+    abgeleitet – der Ablauf braucht keinen Zustand im Arbeitsspeicher)."""
+    out: set[str] = set()
+    for key, (last_close, count) in store.latest_signal_counts().items():
+        timeframe = key.rsplit("|", 1)[1]
+        if count < len(ACTIVE) and now < last_close + timeframe_delta(timeframe):
+            out.add(key)
+    return out
 
 
-def cycle(store: Store, market: MarketData, pending: set[str], now: datetime) -> tuple[dict[str, object], set[str]]:
-    """Ein Durchlauf: Daten holen, Qualität bewerten, Signale erzeugen.
-
-    `pending` sind Zeitebenen, deren letzte Kerze noch auf eine Entscheidung wartet; zurück kommen
-    die weiterhin offenen."""
+def cycle(store: Store, market: MarketData, now: datetime) -> dict[str, object]:
+    """Ein Durchlauf: fällige Kerzen holen, Qualität bewerten, fehlende Entscheidungen erzeugen."""
     sync = marketdata.sync_once(store, market, SIGNAL_TIMEFRAMES, now)
-    created, still = signals.run_once(store, SIGNAL_TIMEFRAMES, sync.status, pending | sync.changed, market.source, now)
-    return {"feeds": sync.status, "signals_created": created, "pending": sorted(still)}, still
+    pending = open_keys(store, now) | sync.changed
+    created, still = signals.run_once(store, SIGNAL_TIMEFRAMES, sync.status, pending, market.source, now)
+    return {"feeds": sync.status, "signals_created": created, "pending": sorted(still)}
+
+
+def ensure_universe(store: Store, market: KrakenPublic) -> None:
+    """Stammdaten anlegen bzw. ergänzen; die Abfrage beim Handelsplatz nur, wenn etwas fehlt."""
+    known = {i.id: i for i in store.universe()}
+    if all(s.id in known and known[s.id].tick_size is not None for s in SEED_INSTRUMENTS):
+        return
+    store.upsert_instruments(seed_instruments(market))
+
+
+def tick(dsn: str, healthcheck_url: str | None = None) -> dict[str, object]:
+    """Ein vollständiger, zustandsloser Arbeitsschritt (für den Minuten-Cron): Befehle, Daten, Signale, Heartbeat."""
+    store = PgStore(dsn)
+    try:
+        _check_schema(store)
+        market = KrakenPublic()
+        now = datetime.now(UTC)
+        ensure_universe(store, market)
+        handled = commands.process_pending(store, now)
+        result = cycle(store, market, now)
+        store.heartbeat(SERVICE, datetime.now(UTC), SCHEMA_VERSION, {"last_cycle": result, "runner": "tick"})
+        _ping_healthcheck(healthcheck_url)
+        return {**result, "commands": handled}
+    finally:
+        store.reset()
 
 
 def seed_instruments(market: KrakenPublic) -> list[Instrument]:
@@ -81,12 +113,10 @@ def _ping_healthcheck(url: str | None) -> None:
 
 def run(store: PgStore, market: KrakenPublic, healthcheck_url: str | None) -> None:
     _check_schema(store)
-    store.upsert_instruments(seed_instruments(market))
+    ensure_universe(store, market)
     last_sync = 0.0
     last_beat = 0.0
     last_cycle: dict[str, object] = {}
-    # Nach einem Neustart alles einmal prüfen: eine noch gültige letzte Kerze erhält ihre Entscheidung.
-    pending = all_keys(store)
     store.heartbeat(SERVICE, datetime.now(UTC), SCHEMA_VERSION, {"last_cycle": "startet"})
     while True:
         started = time.monotonic()
@@ -94,7 +124,7 @@ def run(store: PgStore, market: KrakenPublic, healthcheck_url: str | None) -> No
         try:
             commands.process_pending(store, now)
             if started - last_sync >= SYNC_INTERVAL_S:
-                last_cycle, pending = cycle(store, market, pending, now)
+                last_cycle = cycle(store, market, now)
                 last_sync = started
             if started - last_beat >= HEARTBEAT_INTERVAL_S:
                 store.heartbeat(SERVICE, now, SCHEMA_VERSION, {"last_cycle": last_cycle})
@@ -130,16 +160,11 @@ def main(argv: list[str] | None = None) -> int:
     if args.cmd == "run":
         run(store, KrakenPublic(), os.environ.get("HEALTHCHECK_URL"))
         return 0
+    if args.cmd == "once":
+        log.info("Durchlauf: %s", tick(dsn, os.environ.get("HEALTHCHECK_URL")))
+        return 0
     _check_schema(store)
     now = datetime.now(UTC)
-    if args.cmd == "once":
-        market = KrakenPublic()
-        store.upsert_instruments(seed_instruments(market))
-        result, _ = cycle(store, market, all_keys(store), now)
-        commands.process_pending(store, now)
-        store.heartbeat(SERVICE, now, SCHEMA_VERSION, {"last_cycle": result})
-        log.info("Durchlauf: %s", result)
-        return 0
     candles = kraken_archive.load_csv(args.csv, args.instrument_id, args.timeframe)
     new = store.insert_candles(candles, available_at=now)
     log.info("%d Kerzen gelesen, %d neu gespeichert", len(candles), new)

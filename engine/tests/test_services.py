@@ -172,3 +172,27 @@ def test_commands_ping_and_unknown() -> None:
     assert store.command_results[2]["status"] == "REJECTED"
     assert store.audits and store.audits[0]["kind"] == "command.rejected"
     assert commands.process_pending(store, now) == 0
+
+
+def test_stateless_cycle_fetches_only_when_due_and_decides_once() -> None:
+    """Minuten-Cron: jeder Aufruf leitet aus der Datenbank ab, was offen ist; kein Zustand im Speicher."""
+    from tradingengine import cli
+
+    store, market, end = _setup()
+    calls: list[tuple[str, str]] = []
+    original = market.fetch_closed_candles
+
+    def counting(instrument, timeframe, now):  # type: ignore[no-untyped-def]
+        calls.append((instrument.id, timeframe))
+        return original(instrument, timeframe, now)
+
+    market.fetch_closed_candles = counting  # type: ignore[method-assign]
+    first = cli.cycle(store, market, end + timedelta(seconds=20))
+    assert first["signals_created"] == 4 * N and len(calls) == 4
+    second = cli.cycle(store, market, end + timedelta(seconds=80))
+    assert second["signals_created"] == 0
+    assert len(calls) == 4  # nichts fällig: kein Abruf beim Handelsplatz
+    assert cli.open_keys(store, end + timedelta(seconds=80)) == set()
+    # nach Ablauf der 4h-Kerze ohne neue Daten: Abruf wird wieder versucht, Feed gilt als veraltet
+    late = cli.cycle(store, market, end + timedelta(hours=4, minutes=10))
+    assert late["feeds"]["TEST:AAA/USD|4h"] == "STALE" and late["signals_created"] == 0

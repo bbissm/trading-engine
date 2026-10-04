@@ -72,6 +72,17 @@ class MemoryStore:
             "status": status, "detail": detail, "last_candle_close": last_candle_close, "ok_at": ok_at,
         }
 
+    def feed_statuses(self, feed: str) -> dict[str, str]:
+        return {f"{i}|{tf}": v["status"] for (f, i, tf), v in self.feed.items() if f == feed}
+
+    def latest_signal_counts(self) -> dict[str, tuple[datetime, int]]:
+        out: dict[str, tuple[datetime, int]] = {}
+        for instrument_id, timeframe in {(i, tf) for (i, tf, _) in self.candles}:
+            last = self.load_candles(instrument_id, timeframe, 1)[-1].close_time
+            n = sum(1 for k in self.signals if k[1] == instrument_id and k[2] == timeframe and k[3] == last)
+            out[f"{instrument_id}|{timeframe}"] = (last, n)
+        return out
+
     def ensure_strategy_version(self, version: StrategyVersion) -> None:
         existing = self.strategy_versions.get(version.id)
         if existing is not None and existing != version:
