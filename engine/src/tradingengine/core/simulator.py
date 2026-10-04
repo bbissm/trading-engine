@@ -56,7 +56,7 @@ def _fill(order: Order, candle: Candle, qty: Decimal, price: Decimal, model: Cos
         order_id=order.id,
         qty=qty,
         price=price,
-        fee=model.fee(qty * price, taker),
+        fee=model.order_fee(qty, price, taker),
         fee_currency=currency,
         time=candle.close_time,
         simulated=True,

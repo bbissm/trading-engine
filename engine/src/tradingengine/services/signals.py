@@ -13,6 +13,7 @@ davon, wie viel ältere Historie inzwischen importiert wurde.
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from datetime import datetime
 
 from ..core import indicators as ind
@@ -20,10 +21,14 @@ from ..core.candles import Candle, floor_time, timeframe_delta
 from ..core.regime import REGIME_RULE_VERSION, RegimePoint, daily_regimes, regime_at
 from ..core.signals import FeatureSnapshot, Signal
 from ..core.strategies import ACTIVE
-from ..ports import Store
+from ..ports import Instrument, Store
 from .marketdata import key_of
 
 log = logging.getLogger(__name__)
+
+# Gültigkeitsende eines Signals je (Instrument, Zeitebene, Kerzenschluss); None = Standard (Schluss + eine Periode).
+# Für Aktien/ETFs: Schluss der nächsten Börsensitzung (services/stocks.py).
+ValidUntil = Callable[[Instrument, str, datetime], datetime | None]
 
 REGIME_TIMEFRAME = "1d"
 LOOKBACK = 600
@@ -54,6 +59,7 @@ def run_once(
     pending: set[str],
     data_source: str,
     now: datetime,
+    valid_until_of: ValidUntil | None = None,
 ) -> tuple[int, set[str]]:
     """Verarbeitet die Schlüssel in `pending` ("instrument|timeframe" mit neuen Kerzen).
 
@@ -87,7 +93,8 @@ def run_once(
             store.insert_feature_snapshots([s for s in snapshots if known is None or s.candle_close > known])
 
             last = candles[-1]
-            valid_until = last.close_time + timeframe_delta(timeframe)
+            custom = valid_until_of(inst, timeframe, last.close_time) if valid_until_of is not None else None
+            valid_until = custom if custom is not None else last.close_time + timeframe_delta(timeframe)
             if not (last.close_time <= now < valid_until):
                 continue  # abgelaufen: verpasste Signale werden nicht nachgeholt
 
