@@ -12,11 +12,17 @@ from . import paper
 
 log = logging.getLogger(__name__)
 ACTOR = "engine:commands"
+# Live-Befehle verarbeitet nur der Live-Prozess. Bewusst als Liste hier statt als Import aus tradingengine.live,
+# damit der Paper-/Signalprozess das Live-Paket nie lädt (Strukturtest T3).
+LIVE_COMMAND_TYPES = frozenset({"LIVE_ACCOUNT_REGISTER", "LIVE_PAUSE", "LIVE_RESUME", "LIVE_STOP", "LIVE_CLOSE_ALL", "LIVE_EMERGENCY",
+                                "ORDER_APPROVAL_DECIDE", "MANDATE_SUSPEND"})
 
 
 def process_pending(store: Store, now: datetime, paper_repo: PaperRepo | None = None) -> int:
     handled = 0
     for cmd in store.pending_commands():
+        if cmd.type in LIVE_COMMAND_TYPES:
+            continue  # gehört dem Live-Prozess (api/live.py); bleibt PENDING, bis er läuft
         if cmd.type == "PING":
             status, result = "DONE", {"pong": True, "engine_time": now.isoformat()}
         elif cmd.type.startswith("PAPER_") and paper_repo is not None:

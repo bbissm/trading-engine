@@ -2,7 +2,11 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "regions": ["fra1"],
   "functions": {
-    "api/tick.py": { "maxDuration": 120 }
+    "api/tick.py": { "maxDuration": 120 },
+    "api/live.py": { "maxDuration": 60 }
   },
-  "crons": [{ "path": "/api/tick", "schedule": "* * * * *" }]
+  "crons": [
+    { "path": "/api/tick", "schedule": "* * * * *" },
+    { "path": "/api/live", "schedule": "* * * * *" }
+  ]
 }
