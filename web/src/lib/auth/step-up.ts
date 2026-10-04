@@ -1,0 +1,1 @@
+export async function requireStepUp(maxAgeSeconds = 300): Promise<{ ok: true; at: Date } | { ok: false; reason: string }> { return { ok: false, reason: "Step-up-Anmeldung ist noch nicht eingerichtet." }; }
