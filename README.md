@@ -2,7 +2,7 @@
 
 Persönliche Handelsplattform für Aktien, ETFs und Crypto-Spot: Marktbeobachtung, nachvollziehbare Signale, Paper-Autopilot mit virtuellem Kapital, Lernlabor und – erst nach ausdrücklicher Aktivierung – begrenzter Live-Autopilot über eigene Konten. «TradingEngine» ist ein Arbeitstitel.
 
-**Status (4. Oktober 2026):** Plan vollständig; erster vertikaler Schnitt umgesetzt – Signalbetrieb mit öffentlichen Kraken-Marktdaten, Strategie S1 als ungeprüfter Signalgeber, Dashboard zum Lesen. Es gibt keinen Orderweg, kein verbundenes Broker- oder Exchange-Konto und keinen Echtgeldhandel. Einrichtung: [docs/10-betrieb.md](docs/10-betrieb.md); Code: [`engine/`](engine/README.md), [`web/`](web/README.md).
+**Status (5. Oktober 2026):** Signalbetrieb, Paper-Autopilot, Wächter, Benachrichtigung mit Eskalation, Journal mit CHF-Bewertung und Exporten, Lernlabor mit Walk-forward und Gates, Anmeldung mit TOTP/Passkey/Step-up sind gebaut und auf Vercel in Betrieb. Der Kraken-Live-Orderweg ist gebaut, nur gegen eine simulierte Börse getestet und gesperrt (`LIVE_TRADING_ENABLED` nicht gesetzt, kein Schlüssel hinterlegt). Kein Echtgeldhandel. Keine Strategie hat bisher ein Gate bestanden. Was von dir gebraucht wird: [docs/12](docs/12-was-ich-von-dir-brauche.md).
 
 Technische Funktion, belegte Strategiequalität und Echtgeld-Freigabe sind drei getrennte Dinge und werden getrennt abgenommen. Nichts in diesem Repository ist ein Gewinnversprechen.
 
@@ -21,6 +21,7 @@ Technische Funktion, belegte Strategiequalität und Echtgeld-Freigabe sind drei 
 | [09 Kosten, Annahmen, nächster Schritt](docs/09-kosten-annahmen-naechster-schritt.md) | laufende Kosten in Szenarien, Annahmen, offene Punkte, nächster Schritt | 12, 13, 14 |
 | [10 Betrieb](docs/10-betrieb.md) | Einrichtung von Datenbank, Web-App und Engine | – |
 | [11 Entscheide](docs/11-entscheide.md) | Abweichungen vom Plan während der Umsetzung, mit Begründung | – |
+| [12 Was von dir gebraucht wird](docs/12-was-ich-von-dir-brauche.md) | Konten, Schlüssel und Entscheidungen, die nur du liefern kannst | 13 |
 
 ## Kernentscheide
 

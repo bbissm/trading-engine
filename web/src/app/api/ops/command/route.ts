@@ -1,12 +1,13 @@
 import { NextResponse } from "next/server";
 import { hasDb } from "@/db/client";
+import { issueLabCommand } from "@/lib/data/lab";
 import { issuePaperCommand } from "@/lib/data/paper";
 import { userName } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
 
 /**
- * Same as the buttons in the UI, for scripts: writes one PAPER_* command (plus audit event) for the engine.
+ * Same as the buttons in the UI, for scripts: writes one PAPER_* or LAB_* command (plus audit event) for the engine.
  * Body: { type, accountId?, name?, startCash? } — validated in `issuePaperCommand`; only PAPER_* types exist.
  * Protected by the app login like every other route (src/proxy.ts). No live order route exists.
  */
@@ -18,6 +19,8 @@ export async function POST(req: Request) {
   } catch {
     return NextResponse.json({ error: "JSON erwartet" }, { status: 400 });
   }
-  const r = await issuePaperCommand(userName(), body);
+  const type = typeof body === "object" && body !== null ? String((body as { type?: unknown }).type ?? "") : "";
+  // Lernlabor-Befehle (Forschung, kein Handel) und Paper-Befehle; nichts davon berührt Echtgeld oder verlangt Step-up.
+  const r = type.startsWith("LAB_") ? await issueLabCommand(userName(), body) : await issuePaperCommand(userName(), body);
   return r.ok ? NextResponse.json({ commandId: r.commandId }, { status: 201 }) : NextResponse.json({ error: r.error }, { status: 422 });
 }

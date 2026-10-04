@@ -14,7 +14,7 @@ from typing import Any
 import psycopg
 
 from . import config
-from .alerts import TEST_KIND, raise_alert, resolve_alert
+from .alerts import TEST_KIND, open_alert, raise_alert, resolve_alert
 from .channels import Channels
 
 Conn = psycopg.Connection[dict[str, Any]]
@@ -76,7 +76,11 @@ def check_channels(conn: Conn, now: datetime, channels: Channels | None = None) 
         if sent is not None and now - sent >= TEST_ACK_WINDOW and (ack is None or ack < sent):
             reasons.append(f"Testalarm vom {sent.astimezone(config.ZURICH):%d.%m.%Y %H:%M} seit über 24 h unbestätigt")
             break
-    if reasons:
+    existing = open_alert(conn, OUTAGE_KEY)
+    unchanged = existing is not None and (existing.get("data") or {}).get("reasons") == reasons
+    if reasons and unchanged:
+        pass  # anhaltender Zustand: bestehende Meldung nicht bei jedem Tick hochzählen
+    elif reasons:
         raise_alert(conn, "WARNING", "SYSTEM", "CHANNEL_OUTAGE", OUTAGE_KEY, "Benachrichtigung eingeschränkt",
                     "; ".join(reasons) + ". Live-Einstiege wären pausiert (Schutz und Exits bleiben aktiv). Paper läuft weiter. "
                     "Kanäle unter «Meldungen» prüfen.", {"reasons": reasons}, now)
