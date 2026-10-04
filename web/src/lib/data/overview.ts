@@ -4,6 +4,7 @@ import { db } from "@/db/client";
 import { instruments, signals } from "@/db/schema";
 import { attentionItems, heartbeatState, type AttentionItem, type FeedRow, type HeartbeatState } from "@/lib/health";
 import { paperAttention } from "@/lib/paper";
+import { openAlertCounts } from "./alerts";
 import { loadHealth } from "./health";
 import { listPaperAccounts, listPaperCommands, type PaperAccountSummary } from "./paper";
 
@@ -31,6 +32,16 @@ export interface OverviewData {
 
 const WEEK = 7 * 86_400_000;
 
+/** Offene, unbestätigte Meldungen der Stufen Kritisch und Warnung gehören in «Braucht Aufmerksamkeit». */
+export function alertAttention(counts: Record<string, number>): AttentionItem[] {
+  const out: AttentionItem[] = [];
+  const critical = counts.CRITICAL ?? 0;
+  const warning = counts.WARNING ?? 0;
+  if (critical) out.push({ id: "alerts-critical", severity: "critical", title: `${critical} kritische Meldung${critical === 1 ? "" : "en"} offen`, detail: "Bis zur Bestätigung wird wiederholt und eskaliert. Bestätigen genehmigt keinen Trade.", href: "/alerts" });
+  if (warning) out.push({ id: "alerts-warning", severity: "warning", title: `${warning} Warnung${warning === 1 ? "" : "en"} offen`, detail: "Details und Handlungsoptionen unter Meldungen.", href: "/alerts" });
+  return out;
+}
+
 export async function loadSignalOps(now = Date.now()): Promise<SignalOps> {
   const since = new Date(now - WEEK);
   const [[uni], [last], byAction] = await Promise.all([
@@ -44,8 +55,14 @@ export async function loadSignalOps(now = Date.now()): Promise<SignalOps> {
 
 /** Everything the overview shows. Money figures exist per paper account only — never a total across accounts or modes. */
 export async function loadOverview(now = Date.now()): Promise<OverviewData> {
-  const [health, signalOps, paper, pending] = await Promise.all([loadHealth(), loadSignalOps(now), listPaperAccounts(), listPaperCommands({ limit: 20, pendingOnly: true })]);
-  const attention = [...attentionItems(health, now), ...paperAttention({ accounts: paper, pending }, now)];
+  const [health, signalOps, paper, pending, alertCounts] = await Promise.all([
+    loadHealth(),
+    loadSignalOps(now),
+    listPaperAccounts(),
+    listPaperCommands({ limit: 20, pendingOnly: true }),
+    openAlertCounts(),
+  ]);
+  const attention = [...alertAttention(alertCounts), ...attentionItems(health, now), ...paperAttention({ accounts: paper, pending }, now)];
   return {
     now,
     // critical first, order within a severity stays stable

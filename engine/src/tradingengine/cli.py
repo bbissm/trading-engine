@@ -15,9 +15,11 @@ import logging
 import os
 import sys
 import time
+from collections.abc import Callable
 from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 import httpx
 
@@ -29,9 +31,10 @@ from .adapters.pg_store import PgStore
 from .calendar_us import UsCalendar
 from .core.candles import timeframe_delta
 from .core.strategies import ACTIVE
+from .notify import deliver, health
 from .ports import Instrument, MarketData, Store
 from .schema_version import SCHEMA_VERSION
-from .services import commands, marketdata, paper, signals, stocks
+from .services import commands, fx, guardian, marketdata, paper, signals, stocks
 from .universe import SEED_INSTRUMENTS, SIGNAL_TIMEFRAMES
 from .universe_stocks import is_stock, is_stock_id
 
@@ -93,17 +96,38 @@ def tick(dsn: str, healthcheck_url: str | None = None) -> dict[str, object]:
         creds = AlpacaCredentials.from_env()
         alpaca = AlpacaData(creds) if creds else None
         stocks.ensure_stock_universe(store, alpaca)
-        repo = PaperRepo(store.connection())
-        handled = commands.process_pending(store, now, repo)
+        conn = store.connection()
+        repo = PaperRepo(conn)
+        handled = commands.process_pending(store, now, repo, conn)
         result, cal = cycle(store, market, now, alpaca)
         feeds = result["feeds"]
         assert isinstance(feeds, dict)
         result["paper"] = paper.run_accounts(repo, feeds, datetime.now(UTC), cal)
+        result["ops"] = after_cycle(conn, datetime.now(UTC))
         store.heartbeat(SERVICE, datetime.now(UTC), SCHEMA_VERSION, {"last_cycle": result, "runner": "tick"})
         _ping_healthcheck(healthcheck_url)
         return {**result, "commands": handled}
     finally:
         store.reset()
+
+
+def after_cycle(conn: Any, now: datetime) -> dict[str, object]:
+    """Wächter, Wechselkurse, Kanalprüfung und Zustellung – jeder Schritt einzeln abgesichert, damit ein
+    Fehler (z. B. ein nicht erreichbarer Kanal) weder den Handel noch die übrigen Schritte aufhält."""
+    out: dict[str, object] = {}
+    steps: list[tuple[str, Callable[[], object]]] = [
+        ("guardian", lambda: guardian.run_guardian(conn, now)),
+        ("fx", lambda: fx.refresh_fx(conn, now)),
+        ("channels", lambda: health.check_channels(conn, now)),
+        ("deliver", lambda: deliver.deliver_pending(conn, now)),
+    ]
+    for name, step in steps:
+        try:
+            out[name] = step()
+        except Exception as exc:
+            log.exception("Schritt %s fehlgeschlagen", name)
+            out[name] = {"error": type(exc).__name__}
+    return out
 
 
 def seed_instruments(market: KrakenPublic) -> list[Instrument]:

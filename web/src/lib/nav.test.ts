@@ -4,8 +4,8 @@ import { activeSection, activeTab, backTarget, depth, DESKTOP_NAV, MORE, section
 describe("navigation", () => {
   it("has the five tabs and the sections behind Mehr", () => {
     expect(TABS.map((t) => t.href)).toEqual(["/", "/signals", "/autopilot", "/portfolio", "/more"]);
-    expect(MORE.map((t) => t.href)).toEqual(["/scanner", "/paper", "/strategies", "/journal", "/operations"]);
-    expect(DESKTOP_NAV).toHaveLength(9);
+    expect(MORE.map((t) => t.href)).toEqual(["/scanner", "/paper", "/strategies", "/journal", "/alerts", "/operations"]);
+    expect(DESKTOP_NAV).toHaveLength(10);
     expect(DESKTOP_NAV.some((t) => t.href === "/more")).toBe(false);
   });
 
@@ -30,6 +30,7 @@ describe("navigation", () => {
     expect(backTarget("/instruments/KRAKEN%3ABTC%2FUSD")).toEqual({ href: "/scanner", label: "Scanner" });
     expect(backTarget("/operations")).toEqual({ href: "/more", label: "Mehr" });
     expect(sectionTitle("/strategies")).toBe("Strategien & Lernlabor");
+    expect(backTarget("/lab/3")).toEqual({ href: "/strategies", label: "Strategien & Lernlabor" });
   });
 
   it("orders pages by depth for the slide direction", () => {

@@ -4,17 +4,20 @@ Unbekannte Typen werden abgelehnt. Es gibt keinen Befehl, der eine Live-Order au
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from datetime import datetime
+from typing import Any
 
 from ..adapters.pg_paper import PaperRepo
 from ..ports import Store
-from . import paper
+from . import notify_commands, paper
 
 log = logging.getLogger(__name__)
 ACTOR = "engine:commands"
 
 
-def process_pending(store: Store, now: datetime, paper_repo: PaperRepo | None = None) -> int:
+def process_pending(store: Store, now: datetime, paper_repo: PaperRepo | None = None, conn: Any = None) -> int:
+    """`conn`: Datenbankverbindung für Befehle ausserhalb des Paper-Handels (Meldungen, Lernlabor)."""
     handled = 0
     for cmd in store.pending_commands():
         if cmd.type == "PING":
@@ -25,6 +28,8 @@ def process_pending(store: Store, now: datetime, paper_repo: PaperRepo | None = 
             except Exception as exc:  # ein fehlerhafter Befehl darf den Tick nicht blockieren
                 log.exception("Befehl %s fehlgeschlagen", cmd.id)
                 status, result = "REJECTED", {"reason": f"Interner Fehler: {type(exc).__name__}"}
+        elif cmd.type in notify_commands.TYPES and conn is not None:
+            status, result = _guarded(cmd, lambda c=cmd: notify_commands.handle(conn, c, now))  # type: ignore[misc]
         else:
             status, result = "REJECTED", {"reason": f"Unbekannter Befehl {cmd.type}"}
         store.complete_command(cmd.id, status, result, now)
@@ -33,3 +38,12 @@ def process_pending(store: Store, now: datetime, paper_repo: PaperRepo | None = 
             store.audit(ACTOR, kind, f"command:{cmd.id}", {"type": cmd.type, "target": cmd.target, "issued_by": cmd.issued_by, "result": result})
         handled += 1
     return handled
+
+
+def _guarded(cmd: Any, fn: Callable[[], tuple[str, dict[str, Any]]]) -> tuple[str, dict[str, Any]]:
+    """Ein fehlerhafter Befehl darf den Tick nicht blockieren."""
+    try:
+        return fn()
+    except Exception as exc:
+        log.exception("Befehl %s fehlgeschlagen", cmd.id)
+        return "REJECTED", {"reason": f"Interner Fehler: {type(exc).__name__}"}

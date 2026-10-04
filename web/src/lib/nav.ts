@@ -25,6 +25,7 @@ export const MORE: NavItem[] = [
   { href: "/paper", label: "Paper-Lab", icon: "flask" },
   { href: "/strategies", label: "Strategien & Lernlabor", short: "Strategien", icon: "target" },
   { href: "/journal", label: "Journal", icon: "book" },
+  { href: "/alerts", label: "Meldungen", icon: "bolt" },
   { href: "/operations", label: "Verbindungen & Betrieb", short: "Betrieb", icon: "plug" },
 ];
 
@@ -32,7 +33,7 @@ export const MORE: NavItem[] = [
 export const DESKTOP_NAV: NavItem[] = [...TABS.slice(0, 4), ...MORE];
 
 /** Detail pages without their own nav entry belong to a section (instrument analysis → scanner). */
-const PARENT: Record<string, string> = { "/instruments": "/scanner" };
+const PARENT: Record<string, string> = { "/instruments": "/scanner", "/lab": "/strategies" };
 
 const section = (pathname: string) => {
   const s = "/" + (pathname.split("/").filter(Boolean)[0] ?? "");

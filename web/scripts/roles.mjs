@@ -36,8 +36,11 @@ const GRANTS = {
   reservation: "insert, update, delete",
   equity_snapshot: "insert",
   signal_outcome: "insert",
+  // Pause-Befehl aus einer Telegram-Schaltfläche (nur Paper, risikosenkend) wird als eigener Befehl eingereiht
+  command: "insert",
   // Schema v3: Benachrichtigung, FX, Lernlabor, Freigaben, Live-Vorbereitung
   fx_rate: "insert, update",
+  setting: "insert, update",
   alert: "insert, update",
   alert_delivery: "insert",
   channel_status: "insert, update",
