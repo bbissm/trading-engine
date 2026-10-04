@@ -11,6 +11,7 @@ from decimal import Decimal
 
 from .. import indicators as ind
 from ..candles import Candle
+from ..exit_plan import ExitPlan
 from ..regime import REGIME_RULE_VERSION, Regime, RegimePoint, regime_at
 from ..signals import Action, Decision, StrategyVersion
 from .common import COST_NOTE, clamp_score, no_trade, to_tick
@@ -109,3 +110,9 @@ def decide(
             )
         )
     return out
+
+
+def exit_plan(decision: Decision, params: S3Params = PARAMS) -> ExitPlan:
+    """Festes Ziel am Mittelband zum Einstiegszeitpunkt, fester Stop, kurzes Zeitlimit."""
+    assert decision.stop is not None
+    return ExitPlan(stop=decision.stop, max_hold_bars=params.max_hold_bars, target=decision.target)

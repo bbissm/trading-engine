@@ -19,10 +19,12 @@ Technische Funktion, belegte Strategiequalität und Echtgeld-Freigabe sind drei 
 | [07 Abnahmetests](docs/07-abnahmetests.md) | 17 Pflichtszenarien + 13 zusätzliche Tests | Abschnitt 20 |
 | [08 Etappen und Backlog](docs/08-etappen-backlog.md) | Etappen mit Aufwandsspannen, Epics und Tasks | 10, 11 |
 | [09 Kosten, Annahmen, nächster Schritt](docs/09-kosten-annahmen-naechster-schritt.md) | laufende Kosten in Szenarien, Annahmen, offene Punkte, nächster Schritt | 12, 13, 14 |
+| [10 Betrieb](docs/10-betrieb.md) | Einrichtung von Datenbank, Web-App und Engine | – |
+| [11 Entscheide](docs/11-entscheide.md) | Abweichungen vom Plan während der Umsetzung, mit Begründung | – |
 
 ## Kernentscheide
 
-- **Web-App auf Vercel** (Next.js 16, Tailwind 4, Drizzle, Neon Postgres – wie ContentEngine, CommerceEngine und das Control Center), **Engine auf einem kleinen Dauerlauf-Server** (Python, Docker). Vercel allein kann keine stehenden Verbindungen und keinen Order-/Positionsmanager betreiben.
+- **Web-App auf Vercel** (Next.js 16, Tailwind 4, Drizzle, Neon Postgres – wie ContentEngine, CommerceEngine und das Control Center). **Engine (Python) ebenfalls auf Vercel** als eigenes Projekt mit Minuten-Cron, solange nur Signalbetrieb und Paper-Handel laufen; ein Dauerlauf-Server wird erst für den Live-Handel über Interactive Brokers nötig (docs/11, E-1).
 - **Paper, Live und Lernlabor** sind getrennte Prozesse mit getrennten Zugangsdaten und Datenbankrollen.
 - **Live-Kandidaten:** Interactive Brokers (Aktien/ETF), Kraken (Crypto-Spot). Paper-Phase mit kostenlosen Daten (Alpaca Paper-Only, Kraken öffentlich).
 - **Eine Codebasis** für Strategie, Risikoprüfung und Order-Zustandsautomat in Backtest, Paper und Live.

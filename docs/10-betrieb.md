@@ -35,21 +35,27 @@ cd ../web && pnpm dev                                          # .env.local gem�
 3. Die Anmeldung ist derzeit die einfache Ein-Benutzer-Sitzung wie im Control Center. Passkey + TOTP und
    Step-up (Task E0-4) müssen vor jeder Live-Funktion folgen.
 
-## 4. Engine-Server
+## 4. Engine (Vercel-Projekt `trading-engine-worker`)
 
-1. Kleiner VPS in der EU (z. B. Hetzner CX23; Verfügbarkeit prüfen), Docker installieren, Firewall nur SSH.
-2. Repo klonen, `.env` neben `docker-compose.yml` anlegen:
-   ```
-   DATABASE_URL=postgresql://te_engine:<TE_ENGINE_DB_PASSWORD>@<host aus dem Build-Log>/<datenbank>?sslmode=require
-   HEALTHCHECK_URL=https://hc-ping.com/…
-   ```
-3. `docker compose up -d --build engine`. Der Container startet nach Neustarts selbst wieder.
-4. Externer Heartbeat: bei healthchecks.io eine Prüfung mit Periode 1 min und Karenz 3 min anlegen,
-   Ping-URL als `HEALTHCHECK_URL` eintragen und dort einen Benachrichtigungskanal (E-Mail, später
-   Pushover/Telegram) hinterlegen. Test: `docker compose stop engine` → Alarm innert ca. 5 min.
+Die Engine läuft als eigenes Vercel-Projekt mit Root Directory `engine` (Entscheid E-1 in docs/11).
+`engine/vercel.json` definiert einen Cron, der jede Minute `/api/tick` aufruft.
 
-Noch offen aus Etappe 0: automatisches Ausrollen per GitHub Action (E0-5), zweiter unabhängiger
-Watchdog als Vercel-Cron (E0-6), Passkey-Anmeldung (E0-4), Eintrag im Control Center (E0-8).
+| Variable (Production) | Zweck |
+|---|---|
+| `DATABASE_URL` | `postgresql://te_engine:<TE_ENGINE_DB_PASSWORD>@<host>/<datenbank>?sslmode=require` – Host und Datenbank liefert der geschützte Endpunkt `/api/ops/database` der Web-App |
+| `CRON_SECRET` | Vercel sendet es bei Cron-Aufrufen als Bearer-Token; ohne gültiges Token antwortet die Funktion mit 401 |
+| `HEALTHCHECK_URL` (optional) | Ping-URL eines externen Heartbeat-Dienstes (z. B. healthchecks.io, Periode 1 min, Karenz 3 min) |
+
+Push auf `main` rollt Web und Engine aus. Bei Schemaänderungen läuft die Migration im Web-Build; die Engine
+verweigert die Arbeit, solange ihre `SCHEMA_VERSION` nicht zur Datenbank passt.
+
+Lokal bzw. auf einem späteren Server: `docker compose up -d --build engine` mit `DATABASE_URL` in `.env`.
+Ein Server wird erst für den Live-Handel über Interactive Brokers nötig (IB Gateway).
+
+Lokale Geheimnisse liegen in `.env.secrets` und `.env` im Repo-Ordner (beide gitignored).
+
+Noch offen aus Etappe 0: externer Heartbeat-Dienst (`HEALTHCHECK_URL` ist leer), zweiter unabhängiger
+Watchdog (E0-6), Passkey-Anmeldung (E0-4), Eintrag im Control Center (E0-8).
 
 ## 5. Was im Betrieb zu sehen ist
 

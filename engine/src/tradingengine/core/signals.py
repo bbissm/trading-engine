@@ -42,6 +42,7 @@ class Decision:
     stop: Decimal | None = None
     target: Decimal | None = None
     max_hold_bars: int | None = None
+    ref_level: Decimal | None = None
 
 
 @dataclass(frozen=True, slots=True)

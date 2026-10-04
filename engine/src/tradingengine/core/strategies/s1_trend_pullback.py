@@ -12,6 +12,7 @@ from decimal import Decimal
 
 from .. import indicators as ind
 from ..candles import Candle
+from ..exit_plan import ExitPlan
 from ..regime import REGIME_RULE_VERSION, Regime, RegimePoint, regime_at
 from ..signals import Action, Decision, StrategyVersion
 from .common import COST_NOTE, clamp_score, no_trade, to_tick
@@ -137,3 +138,14 @@ def decide(
             )
         )
     return out
+
+
+def exit_plan(decision: Decision, params: S1Params = PARAMS) -> ExitPlan:
+    """Trailing-Stop vom höchsten Schluss; Ausstieg, sobald das Regime nicht mehr Aufwärtstrend ist."""
+    assert decision.stop is not None
+    return ExitPlan(
+        stop=decision.stop,
+        max_hold_bars=params.max_hold_bars,
+        trail_atr=params.trail_atr,
+        exit_unless_regime=frozenset({Regime.UP}),
+    )

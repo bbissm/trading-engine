@@ -30,7 +30,7 @@ testpaths = ["tests"]
 markers = ["pg: braucht eine Postgres-Datenbank (TE_TEST_DATABASE_URL)"]
 
 [tool.ruff]
-line-length = 150
+line-length = 170
 target-version = "py312"
 
 [tool.ruff.lint]

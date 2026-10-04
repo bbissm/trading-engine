@@ -11,6 +11,7 @@ from decimal import Decimal
 
 from .. import indicators as ind
 from ..candles import Candle
+from ..exit_plan import ExitPlan
 from ..regime import REGIME_RULE_VERSION, Regime, RegimePoint, regime_at
 from ..signals import Action, Decision, StrategyVersion
 from .common import COST_NOTE, clamp_score, no_trade, to_tick
@@ -119,6 +120,19 @@ def decide(
                 stop=to_tick(level - params.stop_atr * atr_i, tick),
                 target=None,  # Ausstieg über Trailing-Stop (trail_atr)
                 max_hold_bars=params.max_hold_bars,
+                ref_level=to_tick(level, tick),
             )
         )
     return out
+
+
+def exit_plan(decision: Decision, params: S2Params = PARAMS) -> ExitPlan:
+    """Trailing-Stop; Ausstieg bei Schluss zurück unter das Ausbruchsniveau in den ersten Kerzen."""
+    assert decision.stop is not None
+    return ExitPlan(
+        stop=decision.stop,
+        max_hold_bars=params.max_hold_bars,
+        trail_atr=params.trail_atr,
+        breakout_level=decision.ref_level,
+        failed_breakout_bars=params.failed_breakout_bars,
+    )

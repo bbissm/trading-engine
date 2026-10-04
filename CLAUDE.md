@@ -1,7 +1,7 @@
 # Projekt-Notizen
 
 - Plan: `docs/01`–`09` (Produkt, Screens, Anbieter, Strategie/Validierung, Architektur, Risiko/Ausführung, Abnahmetests, Backlog, Kosten/offene Punkte). Vor grösseren Änderungen das passende Dokument lesen und bei Abweichungen anpassen.
-- Aufbau: `web/` (Next.js 16, Tailwind 4, Drizzle, Vitest; Vercel, Region fra1) · `engine/` (Python, uv; Dauerlauf-Server per Docker Compose).
+- Aufbau: `web/` (Next.js 16, Tailwind 4, Drizzle, Vitest; Vercel-Projekt `trading-engine`, Region fra1) · `engine/` (Python, uv; Vercel-Projekt `trading-engine-worker`, Minuten-Cron auf `api/tick.py`; zustandslos pro Aufruf). Push auf `main` = Production für beide. Abweichungen vom Plan stehen in `docs/11-entscheide.md`.
 - **Harte Regeln**
   - Kein Echtgeldhandel ohne ausdrückliche Aktivierung durch den Nutzer. Es gibt derzeit keinen Orderweg; Handels-Zugangsdaten gehören nie ins Repo, in die Web-App, in Logs oder Meldungen.
   - Paper, Live und Forschung bleiben getrennt (Prozesse, Datenbankrollen, `mode` an jedem Datensatz). Live- und Paper-Beträge nie addieren.
@@ -9,7 +9,7 @@
   - Keine Erfolgs- oder Gewinnbehauptungen in UI, Texten oder Tests. Setup-Score ist keine Wahrscheinlichkeit.
   - Die Web-App ruft die Engine nie direkt auf: Bedienhandlungen gehen über die Tabelle `command`.
 - **Schema:** Hoheit bei `web/src/db/schema.ts` (Drizzle). Nur additive Änderungen. Bei jeder Migration `SCHEMA_VERSION` in `web/src/db/schema.ts` **und** `engine/src/tradingengine/schema_version.py` erhöhen und `schema_meta` in der Migration aktualisieren. Lokal: `pnpm db:generate`, dann `pnpm db:migrate`. Auf Vercel laufen Migrationen und die Engine-Rolle (`scripts/roles.mjs`) in `vercel-build`, weil die Neon-Zugangsdaten nur dort lesbar sind. Bei einer Schemaänderung deshalb: Engine mit neuer `SCHEMA_VERSION` direkt nach dem Web-Deploy ausrollen (sie verweigert sonst den Start).
-- **Engine-Struktur:** `core/` reine Domänenlogik ohne I/O (Indikatoren, Regime, Strategien – dieselbe Logik für Signalbetrieb, Backtest, Paper, Live) · `ports.py` Schnittstellen · `adapters/` Kraken, Postgres, In-Memory · `services/` Abläufe · `cli.py`.
+- **Engine-Struktur:** `core/` reine Domänenlogik ohne I/O (Indikatoren, Regime, Strategien, Orders/Fills, PnL, Kosten, Positionsgrösse, Risikoprüfung, Kontobuch, Simulator, Exit-Plan – dieselbe Logik für Signalbetrieb, Backtest, Paper, Live) · `backtest.py` ereignisgetriebener Lauf · `ports.py` Schnittstellen · `adapters/` Kraken, Postgres, In-Memory · `services/` Abläufe · `cli.py`.
   - Strategie- und Regimeregeln sind versioniert (`s1-trend-pullback@1`, `regime@1`). Jede Änderung an Regeln oder Parametern ist eine neue Version, nie eine Bearbeitung der bestehenden.
   - Indikatoren müssen kausal bleiben (Wert an Index i nutzt nur Daten ≤ i); der Abschneidetest `test_t13_1_truncation_no_lookahead` darf nicht aufgeweicht werden.
 - **Checks vor jedem Push**
