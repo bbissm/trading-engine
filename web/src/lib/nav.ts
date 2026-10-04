@@ -33,7 +33,7 @@ export const MORE: NavItem[] = [
 export const DESKTOP_NAV: NavItem[] = [...TABS.slice(0, 4), ...MORE];
 
 /** Detail pages without their own nav entry belong to a section (instrument analysis → scanner). */
-const PARENT: Record<string, string> = { "/instruments": "/scanner", "/lab": "/strategies", "/settings": "/more" };
+const PARENT: Record<string, string> = { "/instruments": "/scanner", "/lab": "/strategies", "/settings": "/more", "/live": "/autopilot" };
 
 const section = (pathname: string) => {
   const s = "/" + (pathname.split("/").filter(Boolean)[0] ?? "");

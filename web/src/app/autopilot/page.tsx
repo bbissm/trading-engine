@@ -1,5 +1,7 @@
 import Link from "next/link";
 import { AutoRefresh } from "@/components/auto-refresh";
+import { LiveSummary } from "@/components/live";
+import { loadLiveSummary } from "@/lib/data/live";
 import { ModeBadge } from "@/components/mode-badge";
 import { AccountControls, AutopilotBadge, paperHref } from "@/components/paper";
 import { SetupHint } from "@/components/setup-hint";
@@ -17,7 +19,7 @@ async function load() {
 }
 
 export default async function AutopilotPage() {
-  const r = await guard(() => load());
+  const [r, live] = await Promise.all([guard(() => load()), guard(() => loadLiveSummary())]);
 
   return (
     <>
@@ -81,14 +83,18 @@ export default async function AutopilotPage() {
           )}
 
           <hr className="!mt-8 border-[var(--grid)]" />
-          <section className="rounded-xl border-2 border-mode-live bg-surface p-4" aria-label="Live-Autopilot">
-            <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-              <h2 className="text-sm font-semibold">Live-Autopilot</h2>
-              <ModeBadge mode="LIVE" />
-            </div>
-            <Badge>Nicht eingerichtet</Badge>
-            <p className="mt-2 text-sm">Kein Konto verbunden. Echtgeldhandel ist ausgeschaltet. Es gibt keinen Live-Orderweg.</p>
-          </section>
+          {live.ok ? (
+            <LiveSummary summary={live.data} />
+          ) : (
+            <section className="rounded-xl border-2 border-mode-live bg-surface p-4" aria-label="Live-Autopilot">
+              <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                <h2 className="text-sm font-semibold">Live-Autopilot</h2>
+                <ModeBadge mode="LIVE" />
+              </div>
+              <Badge>Status nicht lesbar</Badge>
+              <p className="mt-2 text-sm">Der Live-Zustand konnte nicht geladen werden. Ohne Mandat und Schalter LIVE_TRADING_ENABLED sendet die Engine keine echte Order.</p>
+            </section>
+          )}
         </div>
       )}
     </>

@@ -3,10 +3,12 @@
   "regions": ["fra1"],
   "functions": {
     "api/tick.py": { "maxDuration": 120 },
-    "api/lab.py": { "maxDuration": 300 }
+    "api/lab.py": { "maxDuration": 300 },
+    "api/live.py": { "maxDuration": 60 }
   },
   "crons": [
     { "path": "/api/tick", "schedule": "* * * * *" },
-    { "path": "/api/lab", "schedule": "*/5 * * * *" }
+    { "path": "/api/lab", "schedule": "*/5 * * * *" },
+    { "path": "/api/live", "schedule": "* * * * *" }
   ]
 }

@@ -1,5 +1,7 @@
 import Link from "next/link";
 import { AutoRefresh } from "@/components/auto-refresh";
+import { LiveSummary } from "@/components/live";
+import { loadLiveSummary } from "@/lib/data/live";
 import { ModeBadge } from "@/components/mode-badge";
 import { AutopilotBadge, paperHref, PositionList, Simulated } from "@/components/paper";
 import { SetupHint } from "@/components/setup-hint";
@@ -11,7 +13,7 @@ import { int } from "@/lib/format";
 export const dynamic = "force-dynamic";
 
 export default async function PortfolioPage() {
-  const r = await guard(() => listPaperPositions());
+  const [r, live] = await Promise.all([guard(() => listPaperPositions()), guard(() => loadLiveSummary())]);
 
   return (
     <>
@@ -21,10 +23,14 @@ export default async function PortfolioPage() {
         <h2 className="mb-2 flex flex-wrap items-center gap-2 text-sm font-semibold">
           <ModeBadge mode="LIVE" /> Echter Bestand
         </h2>
-        <div className="rounded-xl border-2 border-mode-live bg-surface p-4">
-          <Badge>Nicht eingerichtet</Badge>
-          <p className="mt-2 text-sm">Kein Konto verbunden. Es gibt keinen echten Bestand, keine echten Orders und keinen Live-Orderweg. Echtgeldhandel ist ausgeschaltet.</p>
-        </div>
+        {live.ok ? (
+          <LiveSummary summary={live.data} compact />
+        ) : (
+          <div className="rounded-xl border-2 border-mode-live bg-surface p-4">
+            <Badge>Status nicht lesbar</Badge>
+            <p className="mt-2 text-sm">Der echte Bestand konnte nicht geladen werden.</p>
+          </div>
+        )}
       </section>
 
       <section aria-label="PAPER">
