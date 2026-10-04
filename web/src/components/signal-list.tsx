@@ -1,6 +1,8 @@
 import Link from "next/link";
+import type { SignalOutcomeRow } from "@/lib/data/paper";
 import type { SignalRow } from "@/lib/data/signals";
 import { dateTime, price } from "@/lib/format";
+import { ModeBadge } from "./mode-badge";
 import { ActionBadge, RegimeBadge } from "./status";
 import { Banner } from "./ui";
 
@@ -10,7 +12,7 @@ export const instrumentHref = (id: string, timeframe?: string) => `/instruments/
 export function UnverifiedBanner() {
   return (
     <Banner>
-      <strong>Signale ungeprüft – kein Qualitätsnachweis.</strong> Es werden keine Orders erzeugt.
+      <strong>Signale ungeprüft – kein Qualitätsnachweis.</strong> Es entstehen keine Echtgeld-Orders; nur der Paper-Autopilot kann daraus simulierte Orders ableiten.
     </Banner>
   );
 }
@@ -35,7 +37,7 @@ function Reasons({ title, items, empty }: { title: string; items: string[]; empt
 }
 
 /** Stored signals as cards (phone and desktop). Shows what the strategy stored — nothing is recomputed. */
-export function SignalList({ rows, linkInstrument = true }: { rows: SignalRow[]; linkInstrument?: boolean }) {
+export function SignalList({ rows, linkInstrument = true, outcomes }: { rows: SignalRow[]; linkInstrument?: boolean; outcomes?: Record<string, SignalOutcomeRow[]> }) {
   return (
     <ul className="space-y-3">
       {rows.map((s) => {
@@ -81,6 +83,44 @@ export function SignalList({ rows, linkInstrument = true }: { rows: SignalRow[];
               <Reasons title={noTrade ? "Gründe für NO TRADE" : "Auslöser"} items={s.triggers} empty="Keine gespeichert." />
               <Reasons title="Gegenfaktoren" items={s.counter} empty="Keine gespeichert." />
             </div>
+
+            {outcomes?.[s.id]?.length ? (
+              <div className="mt-3 border-t border-[var(--grid)] pt-3">
+                <div className="text-xs font-medium text-muted">Was daraus wurde (simuliert)</div>
+                <ul className="mt-1 space-y-1.5">
+                  {outcomes[s.id].map((o) => (
+                    <li key={`${o.accountId}:${o.episodeNumber}`} className="flex flex-wrap items-start gap-x-2 gap-y-1 text-sm">
+                      <ModeBadge mode="PAPER" />
+                      <span className="min-w-0 flex-1 basis-56 break-words">
+                        {o.status === "ORDERED" ? (
+                          <>
+                            Order erteilt (Paper,{" "}
+                            <Link href={`/paper/${encodeURIComponent(o.accountId)}`} className="hover:underline">
+                              {o.accountName}
+                            </Link>
+                            )
+                          </>
+                        ) : o.status === "BLOCKED" ? (
+                          <>
+                            Blockiert: {o.reasons.length ? o.reasons.join("; ") : "kein Grund gespeichert"}{" "}
+                            <span className="text-ink-2">
+                              (
+                              <Link href={`/paper/${encodeURIComponent(o.accountId)}`} className="hover:underline">
+                                {o.accountName}
+                              </Link>
+                              )
+                            </span>
+                          </>
+                        ) : (
+                          `${o.status} (${o.accountName})`
+                        )}
+                        {o.episodeNumber !== null && <span className="text-xs text-ink-2"> · Episode {o.episodeNumber}</span>}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
           </li>
         );
       })}

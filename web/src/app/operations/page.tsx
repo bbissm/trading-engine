@@ -50,7 +50,7 @@ export default async function OperationsPage() {
             <FeedList rows={r.data.feeds} now={r.data.now} detailed />
           </Card>
 
-          <Card title="Befehlskanal" subtitle="Die Web-App ruft die Engine nie direkt auf: ein Befehl ist eine Zeile in der Tabelle command, die Engine quittiert ihn innert Sekunden.">
+          <Card title="Befehlskanal" subtitle="Die Web-App ruft die Engine nie direkt auf: ein Befehl ist eine Zeile in der Tabelle command, die Engine quittiert ihn innert etwa einer Minute.">
             <PingButton />
             <h3 className="mb-2 mt-4 text-xs font-medium uppercase tracking-wide text-muted">Letzte 10 Befehle</h3>
             {r.data.commands.length ? (

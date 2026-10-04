@@ -3,7 +3,9 @@ import { and, count, eq, gte, max } from "drizzle-orm";
 import { db } from "@/db/client";
 import { instruments, signals } from "@/db/schema";
 import { attentionItems, heartbeatState, type AttentionItem, type FeedRow, type HeartbeatState } from "@/lib/health";
+import { paperAttention } from "@/lib/paper";
 import { loadHealth } from "./health";
+import { listPaperAccounts, listPaperCommands, type PaperAccountSummary } from "./paper";
 
 export interface SignalOps {
   /** Instruments in the approved universe. */
@@ -23,6 +25,8 @@ export interface OverviewData {
   feeds: FeedRow[];
   dbSchemaVersion: number | null;
   signalOps: SignalOps;
+  /** Paper accounts, each on its own — never summed across accounts and never combined with LIVE. */
+  paper: PaperAccountSummary[];
 }
 
 const WEEK = 7 * 86_400_000;
@@ -38,15 +42,18 @@ export async function loadSignalOps(now = Date.now()): Promise<SignalOps> {
   return { universe: uni?.n ?? 0, lastSignalAt: last?.at ?? null, buy7d: n("BUY"), noTrade7d: n("NO_TRADE") };
 }
 
-/** Everything the overview shows. No money figures yet — and never a total across modes. */
+/** Everything the overview shows. Money figures exist per paper account only — never a total across accounts or modes. */
 export async function loadOverview(now = Date.now()): Promise<OverviewData> {
-  const [health, signalOps] = await Promise.all([loadHealth(), loadSignalOps(now)]);
+  const [health, signalOps, paper, pending] = await Promise.all([loadHealth(), loadSignalOps(now), listPaperAccounts(), listPaperCommands({ limit: 20, pendingOnly: true })]);
+  const attention = [...attentionItems(health, now), ...paperAttention({ accounts: paper, pending }, now)];
   return {
     now,
-    attention: attentionItems(health, now),
+    // critical first, order within a severity stays stable
+    attention: attention.sort((a, b) => Number(b.severity === "critical") - Number(a.severity === "critical")),
     heartbeats: health.heartbeats.map((h) => heartbeatState(h, now)),
     feeds: health.feeds,
     dbSchemaVersion: health.dbSchemaVersion,
     signalOps,
+    paper,
   };
 }

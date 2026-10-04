@@ -6,8 +6,9 @@ import { issuePing } from "@/lib/data/operations";
 import { userName } from "@/lib/session";
 
 /**
- * "Engine-Ping": writes a PING row into `command` (plus audit event). The engine answers within seconds
- * by setting status DONE and a result. Harmless by design — the only command the interim login may issue.
+ * "Engine-Ping": writes a PING row into `command` (plus audit event). The engine (per-minute cron) answers within
+ * about a minute by setting status DONE and a result. Harmless by design. Besides PING the interim login may only
+ * issue PAPER_* commands (simulated accounts, see src/app/paper/actions.ts).
  * TODO(E0-4): every further command needs passkey + TOTP, risk-increasing ones a step-up.
  */
 export async function pingAction(): Promise<{ error?: string }> {

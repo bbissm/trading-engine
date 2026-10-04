@@ -65,3 +65,23 @@ Mit 720 echten Kraken-Tageskerzen je Instrument lieferten die drei Strategien 0�
 Trade. Das ist **kein Urteil über die Strategien** – für jedes Gate aus docs/04 sind es viel zu wenige
 Fälle – aber es bestätigt die Erwartung aus docs/09: Die Gebühren sind die grösste Hürde, und «zu wenig
 Evidenz» ist der realistische Zwischenstand.
+
+## E-6 · Paper-Handel wird je abgeschlossener 4h-Kerze fortgeschrieben (4.10.2026)
+
+Der Paper-Autopilot läuft im Minuten-Tick, die Simulation selbst schreitet aber in 4h-Kerzen voran
+(auch für Trades aus Tagessignalen – feinere Daten als die Signal-Zeitebene):
+
+- Ein Stop «löst» im Modell erst bei Kerzenschluss aus; der Ausführungspreis folgt trotzdem der Stop-Regel
+  (schlechterer aus Stop und Eröffnung, abzüglich Slippage). Die Realismus-Karte im Paper-Lab weist das aus.
+- Eine Order nimmt an einer Kerze teil, wenn sie höchstens 5 Minuten nach deren Beginn erteilt wurde
+  (Signal kurz nach Kerzenschluss → Order in der Folgekerze). Später erteilte Orders – etwa «Positionen jetzt
+  schliessen» mitten in einer Kerze – werden erst in der nächsten Kerze ausgeführt.
+- Jeder Kerzenschritt wird genau einmal verbucht (Zeiger `episode.sim_through`, eine Transaktion je Tick).
+  Nach einem Ausfall holt die Engine die verpassten Kerzen in Reihenfolge nach: Stops und Ausstiege werden
+  nachvollzogen, verpasste Signale aber nicht nachträglich gehandelt.
+- Bei Erreichen einer Verlustgrenze blockiert die Risikoprüfung neue Einstiege mit Grund; ein automatischer
+  Zustandswechsel des Autopiloten auf «Einstiege pausiert» samt kritischer Meldung folgt mit den
+  Benachrichtigungen (E2-9).
+
+Noch offen in Etappe 2: Benachrichtigungen (E2-9), Journal mit CHF-Bewertung und Exporten (E2-10/E2-12),
+laufender Verlustgrenzen-Wächter mit Zustandswechsel, Backtest-Oberfläche mit Baselines und Sensitivitäten.

@@ -3,13 +3,19 @@ import { SetupHint } from "@/components/setup-hint";
 import { SignalList, UnverifiedBanner } from "@/components/signal-list";
 import { Empty, PageHeader } from "@/components/ui";
 import { guard } from "@/lib/data/guard";
+import { loadSignalOutcomes } from "@/lib/data/paper";
 import { listSignals } from "@/lib/data/signals";
+
+async function load(includeNoTrade: boolean) {
+  const rows = await listSignals({ includeNoTrade });
+  return { rows, outcomes: await loadSignalOutcomes(rows.map((s) => s.id)) };
+}
 
 export const dynamic = "force-dynamic";
 
 export default async function SignalsPage({ searchParams }: { searchParams: Promise<{ all?: string }> }) {
   const all = (await searchParams).all === "1";
-  const r = await guard(() => listSignals({ includeNoTrade: all }));
+  const r = await guard(() => load(all));
   const tab = (on: boolean) => `rounded-md px-2.5 py-1 text-xs ${on ? "bg-surface-2 font-medium text-ink" : "text-muted hover:text-ink"}`;
 
   return (
@@ -31,8 +37,8 @@ export default async function SignalsPage({ searchParams }: { searchParams: Prom
       <UnverifiedBanner />
       {!r.ok ? (
         <SetupHint state={r} />
-      ) : r.data.length ? (
-        <SignalList rows={r.data} />
+      ) : r.data.rows.length ? (
+        <SignalList rows={r.data.rows} outcomes={r.data.outcomes} />
       ) : (
         <Empty>
           {all ? "Noch keine Entscheide gespeichert." : "Kein gültiges Setup."}{" "}
