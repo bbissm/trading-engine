@@ -20,7 +20,7 @@ from ..core import indicators as ind
 from ..core.candles import Candle, floor_time, timeframe_delta
 from ..core.regime import REGIME_RULE_VERSION, RegimePoint, daily_regimes, regime_at
 from ..core.signals import FeatureSnapshot, Signal
-from ..core.strategies import ACTIVE
+from ..core.strategies import ACTIVE, StrategyDef
 from ..ports import Instrument, Store
 from .marketdata import key_of
 
@@ -60,6 +60,7 @@ def run_once(
     data_source: str,
     now: datetime,
     valid_until_of: ValidUntil | None = None,
+    strategies: list[StrategyDef] | None = None,
 ) -> tuple[int, set[str]]:
     """Verarbeitet die Schlüssel in `pending` ("instrument|timeframe" mit neuen Kerzen).
 
@@ -69,7 +70,8 @@ def run_once(
     """
     if not pending:
         return 0, set()
-    for strategy in ACTIVE:
+    active = ACTIVE if strategies is None else strategies
+    for strategy in active:
         store.ensure_strategy_version(strategy.version)
     universe = store.universe()
     daily = {inst.id: store.load_candles(inst.id, REGIME_TIMEFRAME, LOOKBACK) for inst in universe}
@@ -108,7 +110,7 @@ def run_once(
                 still_pending.add(key)
                 continue
 
-            for strategy in ACTIVE:
+            for strategy in active:
                 decision = strategy.decide(candles, own, leader, tick=inst.tick_size)[-1]
                 signal = Signal(
                     instrument_id=inst.id,

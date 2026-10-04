@@ -60,6 +60,8 @@ const COLUMN_GRANTS = [
   `grant update (lifecycle_status) on strategy_version to te_engine`,
   `grant update (status, result, handled_at) on command to te_engine`,
   `grant update (permissions) on account to te_engine`,
+  // Freigabe-Entscheid (ablehnen/Shadow) kommt als Befehl des Nutzers; die Engine trägt nur ihn ein
+  `grant update (decision, decided_at, decided_by, note) on approval to te_engine`,
 ];
 
 // Anmeldetabellen (Better Auth, E0-4): Passwort-Hash, TOTP-Geheimnis, Sitzungstoken. Die Engine braucht sie nie

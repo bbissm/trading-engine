@@ -30,11 +30,11 @@ from .adapters.pg_paper import PaperRepo
 from .adapters.pg_store import PgStore
 from .calendar_us import UsCalendar
 from .core.candles import timeframe_delta
-from .core.strategies import ACTIVE
+from .core.strategies import ACTIVE, StrategyDef
 from .notify import deliver, health
 from .ports import Instrument, MarketData, Store
 from .schema_version import SCHEMA_VERSION
-from .services import commands, fx, guardian, marketdata, paper, signals, stocks
+from .services import commands, fx, guardian, marketdata, paper, signals, stocks, strategy_registry
 from .universe import SEED_INSTRUMENTS, SIGNAL_TIMEFRAMES
 from .universe_stocks import is_stock, is_stock_id
 
@@ -46,32 +46,35 @@ SYNC_INTERVAL_S = 60.0
 HEARTBEAT_INTERVAL_S = 30.0
 
 
-def open_keys(store: Store, now: datetime) -> set[str]:
+def open_keys(store: Store, now: datetime, strategies: int = len(ACTIVE)) -> set[str]:
     """Zeitebenen, deren letzte Kerze noch gültig ist und der Entscheidungen fehlen (aus der Datenbank
     abgeleitet – der Ablauf braucht keinen Zustand im Arbeitsspeicher)."""
     out: set[str] = set()
     for key, (last_close, count) in store.latest_signal_counts().items():
         timeframe = key.rsplit("|", 1)[1]
-        if count < len(ACTIVE) and now < last_close + timeframe_delta(timeframe):
+        if count < strategies and now < last_close + timeframe_delta(timeframe):
             out.add(key)
     return out
 
 
-def cycle(store: Store, market: MarketData, now: datetime, alpaca: AlpacaData | None = None) -> tuple[dict[str, object], UsCalendar]:
+def cycle(
+    store: Store, market: MarketData, now: datetime, alpaca: AlpacaData | None = None, strategies: list[StrategyDef] | None = None
+) -> tuple[dict[str, object], UsCalendar]:
     """Ein Durchlauf: fällige Kerzen holen, Qualität bewerten, fehlende Entscheidungen erzeugen.
 
     Crypto über Kraken (4h/1d), US-Aktien/ETFs über Alpaca (Tageskerzen je Sitzung, nur mit Schlüsseln)."""
+    active = ACTIVE if strategies is None else strategies
     universe = store.universe()
     crypto = [i for i in universe if not is_stock(i)]
     sync = marketdata.sync_once(store, market, SIGNAL_TIMEFRAMES, now, instruments=crypto)
     stock_sync, cal = stocks.sync_stocks(store, alpaca, now)
     feeds = {**sync.status, **stock_sync.status}
-    crypto_pending = {k for k in open_keys(store, now) | sync.changed if not is_stock_id(k.rsplit("|", 1)[0])}
-    stock_pending = stocks.stock_open_keys(store, now, cal, len(ACTIVE)) | stock_sync.changed
-    created, still = signals.run_once(store, SIGNAL_TIMEFRAMES, feeds, crypto_pending, market.source, now)
+    crypto_pending = {k for k in open_keys(store, now, len(active)) | sync.changed if not is_stock_id(k.rsplit("|", 1)[0])}
+    stock_pending = stocks.stock_open_keys(store, now, cal, len(active)) | stock_sync.changed
+    created, still = signals.run_once(store, SIGNAL_TIMEFRAMES, feeds, crypto_pending, market.source, now, strategies=active)
     if stock_pending and alpaca is not None:
         created_s, still_s = signals.run_once(
-            store, ["1d"], feeds, stock_pending, alpaca.source, now, valid_until_of=stocks.valid_until_of(cal)
+            store, ["1d"], feeds, stock_pending, alpaca.source, now, valid_until_of=stocks.valid_until_of(cal), strategies=active
         )
         created, still = created + created_s, still | still_s
     return {"feeds": feeds, "signals_created": created, "pending": sorted(still)}, cal
@@ -99,10 +102,11 @@ def tick(dsn: str, healthcheck_url: str | None = None) -> dict[str, object]:
         conn = store.connection()
         repo = PaperRepo(conn)
         handled = commands.process_pending(store, now, repo, conn)
-        result, cal = cycle(store, market, now, alpaca)
+        strategies = strategy_registry.all_strategies(conn)
+        result, cal = cycle(store, market, now, alpaca, strategies)
         feeds = result["feeds"]
         assert isinstance(feeds, dict)
-        result["paper"] = paper.run_accounts(repo, feeds, datetime.now(UTC), cal)
+        result["paper"] = paper.run_accounts(repo, feeds, datetime.now(UTC), cal, strategies)
         result["ops"] = after_cycle(conn, datetime.now(UTC))
         store.heartbeat(SERVICE, datetime.now(UTC), SCHEMA_VERSION, {"last_cycle": result, "runner": "tick"})
         _ping_healthcheck(healthcheck_url)

@@ -56,8 +56,8 @@ def _atr_at(candles: list[Candle]) -> float | None:
     return ind.atr([float(c.high) for c in candles], [float(c.low) for c in candles], [float(c.close) for c in candles], 14)[-1]
 
 
-def _strategies(ids: list[str]) -> list[StrategyDef]:
-    return [s for s in ACTIVE if s.version.id in ids]
+def _strategies(ids: list[str], available: list[StrategyDef] | None = None) -> list[StrategyDef]:
+    return [s for s in (ACTIVE if available is None else available) if s.version.id in ids]
 
 
 def _advance(repo: PaperRepo, state: PaperState, model: CostModel, ticks: dict[str, Decimal | None], now: datetime) -> int:
@@ -109,7 +109,9 @@ def _risk_inputs(repo: PaperRepo, state: PaperState, row: dict[str, Any], policy
     )
 
 
-def run_accounts(repo: PaperRepo, feed_status: dict[str, str], now: datetime, calendar: UsCalendar | None = None) -> dict[str, Any]:
+def run_accounts(
+    repo: PaperRepo, feed_status: dict[str, str], now: datetime, calendar: UsCalendar | None = None, strategies: list[StrategyDef] | None = None
+) -> dict[str, Any]:
     """Ein Tick für alle Paper-Konten. `feed_status`: Status je "instrument|timeframe"."""
     summary: dict[str, Any] = {}
     specs, ticks, _ = repo.specs()
@@ -137,7 +139,7 @@ def run_accounts(repo: PaperRepo, feed_status: dict[str, str], now: datetime, ca
                 feed_ok = {i: feed_status.get(f"{i}|{EXEC_TIMEFRAME}") == "OK" for i in ticks}
                 before = len(state.outcomes)
                 submit_entries(state, [s for s, _ in pending], now, prices, _risk_inputs(repo, state, row, policy, feed_ok, now), policy, model,
-                               specs, _strategies(row["strategy_version_ids"]))
+                               specs, _strategies(row["strategy_version_ids"], strategies))
                 submitted = sum(1 for o in state.outcomes[before:] if o.status == "ORDERED")
         repo.save_state(state, now)
         repo.mark_signals_seen(state.episode_id, now)

@@ -37,3 +37,32 @@ ACTIVE: list[StrategyDef] = [
     StrategyDef(s2_volume_breakout.VERSION, s2_volume_breakout.decide, s2_volume_breakout.exit_plan),
     StrategyDef(s3_mean_reversion.VERSION, s3_mean_reversion.decide, s3_mean_reversion.exit_plan, s3_mean_reversion.PARAMS.risk_factor),
 ]
+
+
+# Strategiefamilien: Modul mit decide/exit_plan und Parametertyp. Lab-Versionen (z. B. «…@1+opt-…») sind dieselbe
+# Regel mit anderen, unveränderlichen Parametern.
+_FAMILIES = {
+    "s1-trend-pullback": (s1_trend_pullback, s1_trend_pullback.S1Params),
+    "s2-volume-breakout": (s2_volume_breakout, s2_volume_breakout.S2Params),
+    "s3-mean-reversion": (s3_mean_reversion, s3_mean_reversion.S3Params),
+}
+
+
+def from_version(version: StrategyVersion) -> StrategyDef | None:
+    """StrategyDef für eine gespeicherte Version; None, wenn Familie oder Parameter unbekannt sind."""
+    family = _FAMILIES.get(version.strategy)
+    if family is None:
+        return None
+    module, params_cls = family
+    try:
+        params = params_cls(**version.params)
+    except TypeError:
+        return None
+
+    def decide(candles: list[Candle], own_regimes: list[RegimePoint], leader_regimes: list[RegimePoint], *, tick: Decimal | None = None) -> list[Decision]:
+        return module.decide(candles, own_regimes, leader_regimes, params, tick=tick)  # type: ignore[no-any-return]
+
+    def exit_plan(decision: Decision) -> ExitPlan:
+        return module.exit_plan(decision, params)  # type: ignore[no-any-return]
+
+    return StrategyDef(version, decide, exit_plan, float(getattr(params, "risk_factor", 1.0)))

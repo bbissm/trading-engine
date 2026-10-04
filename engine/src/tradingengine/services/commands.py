@@ -10,7 +10,8 @@ from typing import Any
 
 from ..adapters.pg_paper import PaperRepo
 from ..ports import Store
-from . import notify_commands, paper
+from ..research import commands as lab_commands
+from . import approvals, notify_commands, paper
 
 log = logging.getLogger(__name__)
 ACTOR = "engine:commands"
@@ -28,6 +29,10 @@ def process_pending(store: Store, now: datetime, paper_repo: PaperRepo | None = 
             except Exception as exc:  # ein fehlerhafter Befehl darf den Tick nicht blockieren
                 log.exception("Befehl %s fehlgeschlagen", cmd.id)
                 status, result = "REJECTED", {"reason": f"Interner Fehler: {type(exc).__name__}"}
+        elif cmd.type.startswith("LAB_") and conn is not None:
+            status, result = _guarded(cmd, lambda c=cmd: lab_commands.handle(conn, c, now))  # type: ignore[misc]
+        elif cmd.type == "APPROVAL_DECIDE" and conn is not None and paper_repo is not None:
+            status, result = _guarded(cmd, lambda c=cmd: approvals.decide(conn, paper_repo, c, now))  # type: ignore[misc]
         elif cmd.type in notify_commands.TYPES and conn is not None:
             status, result = _guarded(cmd, lambda c=cmd: notify_commands.handle(conn, c, now))  # type: ignore[misc]
         else:
