@@ -47,7 +47,7 @@ export default async function ExperimentPage({ params }: { params: Promise<{ exp
         }
         actions={
           <>
-            <OutcomeBadge outcome={null} status={e.status} />
+            {!(e.status === "ABORTED" && e.outcome === "ABGEBROCHEN") && <OutcomeBadge outcome={null} status={e.status} />}
             {e.outcome && <OutcomeBadge outcome={e.outcome} status={e.status} />}
             <ModeBadge mode="RESEARCH" />
           </>

@@ -7,7 +7,7 @@ import { guard } from "@/lib/data/guard";
 import { loadJournal, MIN_DAILY_RETURNS, parseJournalFilter, type JournalData, type JournalTrade } from "@/lib/data/journal";
 import { FX_MAX_AGE_DAYS } from "@/lib/fx";
 import { date, dateTime, decimal, int, price } from "@/lib/format";
-import { MIN_TRADES_FOR_CI, sampleCaveat, TOO_FEW_TRADES } from "@/lib/stats";
+import { dec, MIN_TRADES_FOR_CI, sampleCaveat, str, TOO_FEW_TRADES } from "@/lib/stats";
 
 export const dynamic = "force-dynamic";
 
@@ -118,9 +118,9 @@ function Kpis({ d }: { d: JournalData }) {
         <Stat label="Rendite (zeitgewichtet)" value={pct(e?.return)} hint={e ? `Basis ${price(decimal(e.baseEquity), cur)}; ohne Ein-/Auszahlungen = einfache Rendite` : undefined} />
         <Stat label="Max. Drawdown" value={pct(e?.maxDrawdown)} hint={e?.snapshots ? `aus ${int(e.snapshots)} Bewertungen` : "keine Bewertung"} />
         <Stat label="Exposure" value={pct(e?.exposure, 0)} hint="Anteil der Bewertungen mit offener Position" />
-        <Stat label="Umschlag" value={e?.turnover ? `${decimal(e.turnover, 2)} ×` : "—"} hint={`Volumen ${price(decimal(k.volume), cur)} ÷ Ø Eigenkapital`} />
+        <Stat label="Umschlag" value={e?.turnover ? `${decimal(e.turnover, 2)} ×` : "—"} hint={`Volumen ${price(decimal(str(dec(k.volume), 2)), cur)} ÷ Ø Eigenkapital`} />
         <Stat label="Ø Haltedauer" value={hours(k.avgHoldHours)} />
-        <Stat label="Kostenanteil" value={pct(k.feeShareOfVolume, 3)} hint={`Gebühren ${price(decimal(k.fees), cur)} vom Volumen; ${k.feeShareOfGross ? `${pct(k.feeShareOfGross, 0)} des |Brutto-Ergebnisses|` : "Brutto 0"}`} />
+        <Stat label="Kostenanteil" value={pct(k.feeShareOfVolume, 3)} hint={`Gebühren ${price(decimal(str(dec(k.fees), 2)), cur)} vom Volumen; ${k.feeShareOfGross ? `${pct(k.feeShareOfGross, 0)} des |Brutto-Ergebnisses|` : "Brutto 0"}`} />
         <Stat
           label="Sharpe-Kennzahl (annualisiert)"
           value={e?.sharpe ? decimal(e.sharpe, 2) : "—"}
@@ -200,17 +200,9 @@ function TradeList({ d }: { d: JournalData }) {
     { label: `Netto (${cur})`, num: true, cell: (t) => <span className={`font-medium ${toneOf(t.net) === "critical" ? "text-critical" : ""}`}>{signed(t.net)}</span> },
     { label: "Netto (CHF)", num: true, cell: (t) => <ChfCell chf={t.chf} status={t.status} /> },
     { label: "R", num: true, cell: (t) => rText(t.r) },
-    { label: "Gebühren", num: true, cell: (t) => decimal(t.fees) },
-    { label: "Strategie", wide: true, cell: (t) => <span className="break-all font-mono text-xs">{t.strategyVersionId}</span> },
+    { label: "Gebühren", num: true, cell: (t) => decimal(str(dec(t.fees), 2)) },
+    { label: "Strategie", wide: true, cell: (t) => <span className="whitespace-nowrap font-mono text-xs">{t.strategyVersionId}</span> },
     { label: "Ausstiegsgrund", wide: true, cell: (t) => t.exitReason ?? (t.status === "OPEN" ? "—" : "nicht gespeichert") },
-    {
-      label: "Details",
-      cell: (t) => (
-        <Link href={`/journal/${encodeURIComponent(t.id)}`} className="text-accent">
-          Warum? →
-        </Link>
-      ),
-    },
   ];
   return <RecordList rows={d.trades} columns={columns} rowKey={(t) => t.id} />;
 }

@@ -119,7 +119,7 @@ async function fillRows(f: ExportFilter) {
       side: orders.side,
       qty: fills.qty,
       price: fills.price,
-      value: sql<string>`(${fills.qty} * ${fills.price})::text`,
+      value: sql<string>`round(${fills.qty} * ${fills.price}, 10)::text`,
       fee: fills.fee,
       feeCurrency: fills.feeCurrency,
       time: fills.time,

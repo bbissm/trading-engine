@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { CandleChart, type PriceLine } from "@/components/candle-chart";
-import { hours, journalHref, ModeTag, pct, rateText, rText, Row, signed, Step, toneOf, TradeStatus } from "@/components/journal";
+import { hours, journalHref, ModeTag, money2, pct, rateText, rText, Row, signed, Step, toneOf, TradeStatus } from "@/components/journal";
 import { Simulated } from "@/components/paper";
 import { SetupHint } from "@/components/setup-hint";
 import { instrumentHref } from "@/components/signal-list";
@@ -234,12 +234,12 @@ function Analysis({ d }: { d: TradeDetail }) {
           <Row label="Abweichung zum letzten Stop" hint="negativ = schlechter ausgeführt als der Stop (Lücke/Slippage)">
             {signed(p.vsCurrentStop, cur)}
           </Row>
-          <Row label="Geplantes Risiko">{price(decimal(p.plannedRisk), cur)}</Row>
+          <Row label="Geplantes Risiko">{price(money2(p.plannedRisk), cur)}</Row>
           <Row label="Realisiert" hint={p.realizedR ? `${rText(p.realizedR)} – Stops sind kein garantierter Maximalverlust` : undefined}>
             {signed(p.realized, cur)}
           </Row>
           <Row label="Gebühren" hint={`${p.feesOfRisk ? `${pct(p.feesOfRisk, 0)} des geplanten Risikos` : ""}${p.feesOfGross ? ` · ${pct(p.feesOfGross, 0)} des |Brutto|` : ""}`}>
-            {price(decimal(p.fees), cur)}
+            {price(money2(p.fees), cur)}
           </Row>
         </dl>
       </div>
@@ -302,7 +302,7 @@ export default async function TradeDetailPage({ params }: { params: Promise<{ tr
             <Stat label={`Netto (${cur})`} value={signed(t.net, cur)} />
             <Stat label="Netto (CHF)" value={chf.split ? signed(chf.split.total, "CHF") : t.status === "OPEN" ? "—" : "Kurs fehlt"} hint={chf.split ? `Handel ${signed(chf.split.trading, "CHF")} · Währung ${signed(chf.split.fxEffect, "CHF")}` : undefined} />
             <Stat label="In R" value={rText(t.r)} hint="Netto ÷ geplantes Risiko" />
-            <Stat label="Gebühren" value={price(decimal(t.fees), cur)} />
+            <Stat label="Gebühren" value={price(money2(t.fees), cur)} />
             <Stat label="Menge" value={decimal(t.qty, 0)} hint={`Ø Einstieg ${price(t.avgEntry, cur)}`} />
             <Stat label="Haltedauer" value={hours(t.closedAt ? (t.closedAt.getTime() - t.openedAt.getTime()) / 3_600_000 : null)} hint={`${d.barsHeld} Kerzen ${t.timeframe}`} />
           </div>

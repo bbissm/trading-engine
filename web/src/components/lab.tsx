@@ -275,7 +275,7 @@ export function ExperimentList({ rows }: { rows: ExperimentRow[] }) {
                   <td className="break-all font-mono text-xs">{e.strategyVersionId ?? e.strategy}</td>
                   <td>
                     <span className="inline-flex flex-wrap gap-1">
-                      <OutcomeBadge outcome={null} status={e.status} />
+                      {!(e.status === "ABORTED" && e.outcome === "ABGEBROCHEN") && <OutcomeBadge outcome={null} status={e.status} />}
                       {e.outcome && <OutcomeBadge outcome={e.outcome} status={e.status} />}
                     </span>
                   </td>

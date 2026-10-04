@@ -47,7 +47,10 @@ export function signed(value: string | null | undefined, currency?: string | nul
   return value.startsWith("-") ? v.replace("-", "−") : dec(value) === 0n ? v : `+${v}`;
 }
 
-export const rText = (r: string | null | undefined) => (r === null || r === undefined ? "—" : `${signed(r).replace(/ $/, "")} R`);
+/** Money rounded to 2 decimals for display (exact decimal rounding). */
+export const money2 = (v: string | null | undefined) => (v === null || v === undefined ? "—" : decimal(str(dec(v), 2)));
+
+export const rText =(r: string | null | undefined) => (r === null || r === undefined ? "—" : `${signed(r).replace(/ $/, "")} R`);
 
 export const toneOf = (value: string | null | undefined): Tone | undefined => (!value ? undefined : value.startsWith("-") ? "critical" : dec(value) > 0n ? "good" : undefined);
 
@@ -82,7 +85,7 @@ export function TradeStatus({ status }: { status: string }) {
 }
 
 export const TradeLink = ({ id, children }: { id: string; children: ReactNode }) => (
-  <Link href={tradeHref(id)} className="font-medium hover:underline">
+  <Link href={tradeHref(id)} className="font-medium text-accent hover:underline">
     {children}
   </Link>
 );
