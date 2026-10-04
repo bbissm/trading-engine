@@ -14,6 +14,7 @@ from helpers import FakeMarket, instrument, make_candles, random_walk, resample_
 
 from tradingengine.adapters.pg_store import PgStore
 from tradingengine.core.signals import StrategyVersion
+from tradingengine.core.strategies import ACTIVE
 from tradingengine.core.strategies import s1_trend_pullback as s1
 from tradingengine.schema_version import SCHEMA_VERSION
 from tradingengine.services import commands, marketdata, signals
@@ -63,7 +64,7 @@ def test_full_cycle_against_postgres(store: PgStore) -> None:
     assert store.load_candles(other.id, "4h", 5) == loaded[-5:]
 
     created, pending = signals.run_once(store, TFS, sync.status, sync.changed, market.source, now)
-    assert (created, pending) == (4, set())
+    assert (created, pending) == (4 * len(ACTIVE), set())
     # Wiederholung nach „Neustart“: weder neue Kerzen noch ein zweites Signal
     sync2 = marketdata.sync_once(store, market, TFS, now + timedelta(seconds=60))
     assert sync2.changed == set()
@@ -71,9 +72,9 @@ def test_full_cycle_against_postgres(store: PgStore) -> None:
     assert again == 0
 
     with psycopg.connect(DSN) as conn:  # type: ignore[arg-type]
-        assert conn.execute("select count(*) from signal").fetchone() == (4,)
-        row = conn.execute("select data_age_s, valid_until > created_at, jsonb_array_length(triggers) > 0 from signal limit 1").fetchone()
-        assert row == (20, True, True)
+        assert conn.execute("select count(*) from signal").fetchone() == (4 * len(ACTIVE),)
+        rows = conn.execute("select distinct data_age_s, valid_until > created_at, jsonb_array_length(triggers) > 0 from signal").fetchall()
+        assert rows == [(20, True, True)]
         assert conn.execute("select count(*) from feature_snapshot").fetchone()[0] > 1000  # type: ignore[index]
         assert conn.execute("select count(distinct status) from feed_status").fetchone() == (1,)
 

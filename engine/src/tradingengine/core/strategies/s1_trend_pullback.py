@@ -8,13 +8,13 @@ an jedem BUY-Signal.
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
-from datetime import datetime
-from decimal import ROUND_DOWN, Decimal
+from decimal import Decimal
 
 from .. import indicators as ind
 from ..candles import Candle
 from ..regime import REGIME_RULE_VERSION, Regime, RegimePoint, regime_at
 from ..signals import Action, Decision, StrategyVersion
+from .common import COST_NOTE, clamp_score, no_trade, to_tick
 
 
 @dataclass(frozen=True, slots=True)
@@ -40,20 +40,12 @@ VERSION = StrategyVersion(
 )
 
 
-def _price_like(x: float, reference: Decimal) -> Decimal:
-    """Preis in der Genauigkeit des Referenzkurses (Stops ohne Schein-Nachkommastellen), abgerundet."""
-    return Decimal(str(x)).quantize(Decimal(1).scaleb(reference.as_tuple().exponent), rounding=ROUND_DOWN)  # type: ignore[arg-type]
-
-
-def _no_trade(t: datetime, regime: Regime, reason: str) -> Decision:
-    return Decision(candle_close=t, action=Action.NO_TRADE, regime=regime, triggers=[reason])
-
-
 def decide(
     candles: list[Candle],
     own_regimes: list[RegimePoint],
     leader_regimes: list[RegimePoint],
     params: S1Params = PARAMS,
+    tick: Decimal | None = None,
 ) -> list[Decision]:
     """Eine Entscheidung je Kerze. Entscheidung i verwendet nur Kerzen ≤ i und Regime-Punkte,
     die bis zum Schluss von Kerze i abgeschlossen waren."""
@@ -79,16 +71,16 @@ def decide(
         ema_i, atr_i = ema[i], atr[i]
 
         if i < params.pullback_lookback or ema_i is None or atr_i is None:
-            out.append(_no_trade(t, regime, "Zu wenig Historie für EMA/ATR"))
+            out.append(no_trade(t, regime, "Zu wenig Historie für EMA/ATR"))
             continue
         if regime is Regime.UNKNOWN:
-            out.append(_no_trade(t, regime, "Regime unbekannt (weniger als 200 Tageskerzen)"))
+            out.append(no_trade(t, regime, "Regime unbekannt (weniger als 200 Tageskerzen)"))
             continue
         if regime is not Regime.UP:
-            out.append(_no_trade(t, regime, f"Regime {regime.value}: S1 handelt nur im Aufwärtstrend"))
+            out.append(no_trade(t, regime, f"Regime {regime.value}: S1 handelt nur im Aufwärtstrend"))
             continue
         if leader in (Regime.STRESS, Regime.UNKNOWN):
-            out.append(_no_trade(t, regime, f"Leitmarkt-Regime {leader.value}: keine Einstiege"))
+            out.append(no_trade(t, regime, f"Leitmarkt-Regime {leader.value}: keine Einstiege"))
             continue
 
         touched = False
@@ -98,10 +90,10 @@ def decide(
                 touched = True
                 break
         if not touched:
-            out.append(_no_trade(t, regime, f"Kein Rücksetzer an EMA{params.ema_len} in den letzten {params.pullback_lookback} Kerzen"))
+            out.append(no_trade(t, regime, f"Kein Rücksetzer an EMA{params.ema_len} in den letzten {params.pullback_lookback} Kerzen"))
             continue
         if not (close[i] > high[i - 1] and close[i] > ema_i):
-            out.append(_no_trade(t, regime, "Rücksetzer vorhanden, aber kein Schluss über Vorkerzenhoch und EMA"))
+            out.append(no_trade(t, regime, "Rücksetzer vorhanden, aber kein Schluss über Vorkerzenhoch und EMA"))
             continue
 
         triggers = [
@@ -109,7 +101,7 @@ def decide(
             f"Rücksetzer an EMA{params.ema_len} innerhalb der letzten {params.pullback_lookback} Kerzen",
             "Schluss über Vorkerzenhoch und über EMA",
         ]
-        counter = ["Kosten, Spread und Netto-Chance-Risiko noch nicht geprüft (Kostenmodell folgt in Etappe 2)"]
+        counter = [COST_NOTE]
         score = 40.0
         adx_day = None
         past = [d for d in daily_times if d <= t]
@@ -137,9 +129,9 @@ def decide(
                 regime=regime,
                 triggers=triggers,
                 counter=counter,
-                score=max(0, min(100, round(score))),
+                score=clamp_score(score),
                 entry=candle.close,
-                stop=_price_like(close[i] - params.stop_atr * atr_i, candle.close),
+                stop=to_tick(close[i] - params.stop_atr * atr_i, tick),
                 target=None,  # Ausstieg über Trailing-Stop (trail_atr), kein festes Ziel
                 max_hold_bars=params.max_hold_bars,
             )

@@ -9,10 +9,12 @@ from tradingengine.adapters.kraken_public import parse_ohlc
 from tradingengine.adapters.memory_store import MemoryStore
 from tradingengine.core.candles import find_gaps
 from tradingengine.core.signals import Action
+from tradingengine.core.strategies import ACTIVE
 from tradingengine.ports import Command
 from tradingengine.services import commands, marketdata, signals
 
 TFS = ["4h", "1d"]
+N = len(ACTIVE)
 FIXTURES = Path(__file__).parent / "fixtures"
 
 
@@ -92,7 +94,7 @@ def test_signal_only_for_latest_closed_candle_and_idempotent() -> None:
     sync = marketdata.sync_once(store, market, TFS, now)
     created, pending = signals.run_once(store, TFS, sync.status, sync.changed, market.source, now)
     assert pending == set()
-    assert created == 4  # 2 Instrumente × 2 Zeitebenen, jeweils genau die letzte Kerze
+    assert created == 4 * N  # 2 Instrumente × 2 Zeitebenen × Strategien, je die letzte Kerze
     for sig in store.signals.values():
         assert sig.decision.candle_close <= sig.created_at < sig.valid_until
         assert sig.decision.candle_close == end
@@ -101,7 +103,7 @@ def test_signal_only_for_latest_closed_candle_and_idempotent() -> None:
         assert sig.decision.triggers
     # Wiederholung (Neustart, doppeltes Ereignis): keine zweite Entscheidung zur selben Kerze
     again, _ = signals.run_once(store, TFS, sync.status, _all_keys(store), market.source, now + timedelta(seconds=60))
-    assert again == 0 and len(store.signals) == 4
+    assert again == 0 and len(store.signals) == 4 * N
     # Feature-Snapshots wurden für die Historie geschrieben, Signale nicht
     assert len(store.snapshots) > 1000
 
@@ -125,7 +127,7 @@ def test_bad_feed_blocks_and_retries_until_ok() -> None:
     assert created == 0
     assert pending == _all_keys(store)  # alle hängen am Regime des Leitinstruments
     created, pending = signals.run_once(store, TFS, sync.status, pending, market.source, now + timedelta(seconds=60))
-    assert created == 4 and pending == set()
+    assert created == 4 * N and pending == set()
 
 
 def test_missing_daily_candle_defers_4h_decision() -> None:
@@ -146,7 +148,7 @@ def test_missing_daily_candle_defers_4h_decision() -> None:
     sync2 = marketdata.sync_once(store, market, TFS, later)
     created2, pending2 = signals.run_once(store, TFS, sync2.status, pending | sync2.changed, market.source, later)
     assert pending2 == set()
-    assert sum(1 for k in store.signals if k[1] == "TEST:AAA/USD") == 2
+    assert sum(1 for k in store.signals if k[1] == "TEST:AAA/USD") == 2 * N
 
 
 def test_replay_reproduces_stored_decisions() -> None:

@@ -8,6 +8,7 @@ import { issuePing, loadOperations } from "./operations";
 import { loadOverview } from "./overview";
 import { loadScanner } from "./scanner";
 import { listSignals } from "./signals";
+import { listStrategyVersions } from "./strategies";
 
 const NOW = Date.UTC(2026, 9, 4, 12, 0, 0);
 const at = (minutesAgo: number) => new Date(NOW - minutesAgo * 60_000);
@@ -144,5 +145,14 @@ describe("command channel", () => {
     const ops = await loadOperations(NOW);
     expect(ops.commands).toHaveLength(1);
     expect(ops.feeds).toHaveLength(2);
+  });
+});
+
+describe("strategy versions", () => {
+  it("lists registered versions with plain decision counts", async () => {
+    const rows = await listStrategyVersions();
+    expect(rows.map((r) => r.id)).toEqual(["s1-trend-pullback@1"]);
+    expect(rows[0]).toMatchObject({ lifecycleStatus: "IDEE", decisions: 4, buys: 2 });
+    expect(rows[0].lastDecisionAt?.getTime()).toBe(at(58).getTime());
   });
 });

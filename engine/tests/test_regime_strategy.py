@@ -103,7 +103,7 @@ def test_s1_stop_distance_is_two_atr() -> None:
     atr = ind.atr([float(c.high) for c in candles], [float(c.low) for c in candles], [float(c.close) for c in candles], 14)[-1]
     assert atr is not None
     assert last.entry is not None and last.stop is not None
-    assert last.entry - last.stop == pytest.approx(Decimal(str(2 * atr)), abs=Decimal("0.0001"))
+    assert last.entry - last.stop == pytest.approx(Decimal(str(2 * atr)), abs=Decimal("0.00000001"))
 
 
 @pytest.mark.parametrize("seed", [1, 2, 3, 4, 5])

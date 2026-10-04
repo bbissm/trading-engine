@@ -7,12 +7,12 @@ Forschungsausgaben einer Strategie ohne Qualitätsnachweis.
 ## Was der Prozess tut
 
 Alle 60 s:
-1. Abgeschlossene 4h- und Tageskerzen für das Universum (`universe.py`: BTC/USD, ETH/USD) von Krakens
-   öffentlicher REST-Schnittstelle holen; nur neue Kerzen speichern.
+1. Abgeschlossene 4h- und Tageskerzen für das Universum von Krakens
+   öffentlicher REST-Schnittstelle holen; nur neue Kerzen speichern. Universum: BTC, ETH, SOL, XRP, LINK gegen USD.
 2. Datenqualität je Instrument und Zeitebene bewerten: `OK`, `STALE`, `GAP`, `ERROR`.
 3. Regime (`regime@1`) und Features je Kerze speichern.
-4. Für die zuletzt abgeschlossene, noch gültige Kerze die Entscheidung der Strategie
-   `s1-trend-pullback@1` ins Signaljournal schreiben – auch `NO_TRADE` mit Grund. Bei nicht einwandfreiem
+4. Für die zuletzt abgeschlossene, noch gültige Kerze die Entscheidung jeder aktiven Strategie
+   (`s1-trend-pullback@1`, `s2-volume-breakout@1`, `s3-mean-reversion@1`) ins Signaljournal schreiben – auch `NO_TRADE` mit Grund. Bei nicht einwandfreiem
    Feed oder fehlender fälliger Tageskerze wird gewartet; abgelaufene Kerzen erhalten kein Signal.
 
 Alle 2 s: Befehle aus der Tabelle `command` verarbeiten (derzeit nur `PING`). Alle 30 s: Heartbeat in

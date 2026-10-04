@@ -149,3 +149,13 @@ def rolling_median(values: Sequence[float], n: int) -> Series:
         mid = n // 2
         out[i] = window[mid] if n % 2 else (window[mid - 1] + window[mid]) / 2
     return out
+
+
+def rolling_std(values: Sequence[float], n: int) -> Series:
+    """Standardabweichung (Grundgesamtheit) über n Werte, wie bei Bollinger-Bändern üblich."""
+    out: Series = [None] * len(values)
+    for i in range(n - 1, len(values)):
+        window = values[i - n + 1 : i + 1]
+        mean = sum(window) / n
+        out[i] = math.sqrt(sum((v - mean) ** 2 for v in window) / n)
+    return out

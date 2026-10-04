@@ -15,6 +15,7 @@ import logging
 import os
 import sys
 import time
+from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -23,7 +24,7 @@ import httpx
 from .adapters import kraken_archive
 from .adapters.kraken_public import KrakenPublic
 from .adapters.pg_store import PgStore
-from .ports import MarketData, Store
+from .ports import Instrument, MarketData, Store
 from .schema_version import SCHEMA_VERSION
 from .services import commands, marketdata, signals
 from .universe import SEED_INSTRUMENTS, SIGNAL_TIMEFRAMES
@@ -50,6 +51,16 @@ def cycle(store: Store, market: MarketData, pending: set[str], now: datetime) ->
     return {"feeds": sync.status, "signals_created": created, "pending": sorted(still)}, still
 
 
+def seed_instruments(market: KrakenPublic) -> list[Instrument]:
+    """Start-Universum mit Tick-Grössen vom Handelsplatz; ohne Antwort bleiben bekannte Werte erhalten."""
+    try:
+        ticks = market.fetch_tick_sizes([i.venue_symbol for i in SEED_INSTRUMENTS])
+    except Exception as exc:
+        log.warning("Tick-Grössen nicht abrufbar: %s", exc)
+        return SEED_INSTRUMENTS
+    return [replace(i, tick_size=ticks.get(i.venue_symbol)) for i in SEED_INSTRUMENTS]
+
+
 def _check_schema(store: Store) -> None:
     version = store.schema_version()
     if version != SCHEMA_VERSION:
@@ -68,9 +79,9 @@ def _ping_healthcheck(url: str | None) -> None:
         log.warning("Externer Heartbeat nicht erreichbar: %s", exc)
 
 
-def run(store: PgStore, market: MarketData, healthcheck_url: str | None) -> None:
+def run(store: PgStore, market: KrakenPublic, healthcheck_url: str | None) -> None:
     _check_schema(store)
-    store.upsert_instruments(SEED_INSTRUMENTS)
+    store.upsert_instruments(seed_instruments(market))
     last_sync = 0.0
     last_beat = 0.0
     last_cycle: dict[str, object] = {}
@@ -121,8 +132,9 @@ def main(argv: list[str] | None = None) -> int:
     _check_schema(store)
     now = datetime.now(UTC)
     if args.cmd == "once":
-        store.upsert_instruments(SEED_INSTRUMENTS)
-        result, _ = cycle(store, KrakenPublic(), all_keys(store), now)
+        market = KrakenPublic()
+        store.upsert_instruments(seed_instruments(market))
+        result, _ = cycle(store, market, all_keys(store), now)
         commands.process_pending(store, now)
         store.heartbeat(SERVICE, now, SCHEMA_VERSION, {"last_cycle": result})
         log.info("Durchlauf: %s", result)

@@ -43,12 +43,12 @@ class PgStore:
                 # in_universe wird nur beim ersten Anlegen gesetzt: spätere Freigaben/Sperren sind Bedienhandlungen.
                 cur.execute(
                     """
-                    insert into instrument (id, kind, venue, venue_symbol, name, base_asset, quote_currency, leader_id, in_universe)
-                    values (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    insert into instrument (id, kind, venue, venue_symbol, name, base_asset, quote_currency, leader_id, in_universe, tick_size)
+                    values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     on conflict (id) do update set venue_symbol = excluded.venue_symbol, name = excluded.name,
-                        leader_id = excluded.leader_id
+                        leader_id = excluded.leader_id, tick_size = coalesce(excluded.tick_size, instrument.tick_size)
                     """,
-                    (i.id, i.kind, i.venue, i.venue_symbol, i.name, i.base_asset, i.quote_currency, i.leader_id, i.in_universe),
+                    (i.id, i.kind, i.venue, i.venue_symbol, i.name, i.base_asset, i.quote_currency, i.leader_id, i.in_universe, i.tick_size),
                 )
 
     def universe(self) -> list[Instrument]:
@@ -59,7 +59,7 @@ class PgStore:
             Instrument(
                 id=r["id"], kind=r["kind"], venue=r["venue"], venue_symbol=r["venue_symbol"], name=r["name"],
                 base_asset=r["base_asset"], quote_currency=r["quote_currency"], leader_id=r["leader_id"],
-                in_universe=r["in_universe"],
+                in_universe=r["in_universe"], tick_size=r["tick_size"],
             )
             for r in rows
         ]

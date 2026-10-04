@@ -19,7 +19,7 @@ from ..core import indicators as ind
 from ..core.candles import Candle, floor_time, timeframe_delta
 from ..core.regime import REGIME_RULE_VERSION, RegimePoint, daily_regimes, regime_at
 from ..core.signals import FeatureSnapshot, Signal
-from ..core.strategies import s1_trend_pullback as s1
+from ..core.strategies import ACTIVE
 from ..ports import Store
 from .marketdata import key_of
 
@@ -63,7 +63,8 @@ def run_once(
     """
     if not pending:
         return 0, set()
-    store.ensure_strategy_version(s1.VERSION)
+    for strategy in ACTIVE:
+        store.ensure_strategy_version(strategy.version)
     universe = store.universe()
     daily = {inst.id: store.load_candles(inst.id, REGIME_TIMEFRAME, LOOKBACK) for inst in universe}
     regimes = {inst_id: daily_regimes(candles) for inst_id, candles in daily.items()}
@@ -100,18 +101,19 @@ def run_once(
                 still_pending.add(key)
                 continue
 
-            decision = s1.decide(candles, own, leader)[-1]
-            signal = Signal(
-                instrument_id=inst.id,
-                timeframe=timeframe,
-                strategy_version_id=s1.VERSION.id,
-                decision=decision,
-                valid_until=valid_until,
-                data_source=data_source,
-                data_age_s=int((now - last.close_time).total_seconds()),
-                created_at=now,
-            )
-            if store.insert_signal(signal):
-                created += 1
-                log.info("Signal %s %s %s: %s", inst.id, timeframe, last.close_time.isoformat(), decision.action.value)
+            for strategy in ACTIVE:
+                decision = strategy.decide(candles, own, leader, tick=inst.tick_size)[-1]
+                signal = Signal(
+                    instrument_id=inst.id,
+                    timeframe=timeframe,
+                    strategy_version_id=strategy.version.id,
+                    decision=decision,
+                    valid_until=valid_until,
+                    data_source=data_source,
+                    data_age_s=int((now - last.close_time).total_seconds()),
+                    created_at=now,
+                )
+                if store.insert_signal(signal):
+                    created += 1
+                    log.info("Signal %s %s %s: %s", strategy.version.id, inst.id, timeframe, decision.action.value)
     return created, still_pending

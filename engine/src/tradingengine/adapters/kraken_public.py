@@ -59,6 +59,15 @@ class KrakenPublic:
     def __init__(self, client: httpx.Client | None = None) -> None:
         self._client = client or httpx.Client(timeout=15.0, headers={"User-Agent": "tradingengine/0.1"})
 
+    def fetch_tick_sizes(self, venue_symbols: list[str]) -> dict[str, Decimal]:
+        """Tick-Grösse je Paar aus AssetPairs, Schlüssel = `altname` (z. B. "XBTUSD")."""
+        resp = self._client.get(f"{BASE_URL}/AssetPairs", params={"pair": ",".join(venue_symbols)})
+        resp.raise_for_status()
+        payload = resp.json()
+        if payload.get("error"):
+            raise KrakenError(", ".join(payload["error"]))
+        return {v["altname"]: Decimal(v["tick_size"]) for v in payload["result"].values()}
+
     def fetch_closed_candles(self, instrument: Instrument, timeframe: str, now: datetime) -> list[Candle]:
         resp = self._client.get(
             f"{BASE_URL}/OHLC", params={"pair": instrument.venue_symbol, "interval": TIMEFRAME_MINUTES[timeframe]}
