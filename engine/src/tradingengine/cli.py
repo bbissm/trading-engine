@@ -87,6 +87,7 @@ def run(store: PgStore, market: KrakenPublic, healthcheck_url: str | None) -> No
     last_cycle: dict[str, object] = {}
     # Nach einem Neustart alles einmal prüfen: eine noch gültige letzte Kerze erhält ihre Entscheidung.
     pending = all_keys(store)
+    store.heartbeat(SERVICE, datetime.now(UTC), SCHEMA_VERSION, {"last_cycle": "startet"})
     while True:
         started = time.monotonic()
         now = datetime.now(UTC)

@@ -67,21 +67,22 @@ class PgStore:
     def insert_candles(self, candles: list[Candle], available_at: datetime) -> int:
         if not candles:
             return 0
-        new = 0
         with self._c().cursor() as cur:
-            for c in candles:
-                cur.execute(
-                    """
-                    insert into candle (instrument_id, timeframe, open_time, close_time, open, high, low, close,
-                                        volume, trades, source, available_at)
-                    values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                    on conflict do nothing
-                    """,
+            # executemany nutzt den Pipeline-Modus: ein Netzwerk-Rundlauf statt einem pro Kerze
+            cur.executemany(
+                """
+                insert into candle (instrument_id, timeframe, open_time, close_time, open, high, low, close,
+                                    volume, trades, source, available_at)
+                values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                on conflict do nothing
+                """,
+                [
                     (c.instrument_id, c.timeframe, c.open_time, c.close_time, c.open, c.high, c.low, c.close,
-                     c.volume, c.trades, c.source, available_at),
-                )
-                new += cur.rowcount
-        return new
+                     c.volume, c.trades, c.source, available_at)
+                    for c in candles
+                ],
+            )
+            return cur.rowcount
 
     def load_candles(self, instrument_id: str, timeframe: str, limit: int | None = None) -> list[Candle]:
         if limit is None:
@@ -156,18 +157,20 @@ class PgStore:
             )
 
     def insert_feature_snapshots(self, snapshots: list[FeatureSnapshot]) -> int:
-        new = 0
+        if not snapshots:
+            return 0
         with self._c().cursor() as cur:
-            for s in snapshots:
-                cur.execute(
-                    """
-                    insert into feature_snapshot (instrument_id, timeframe, candle_close, regime_rule_version, regime, features)
-                    values (%s, %s, %s, %s, %s, %s) on conflict do nothing
-                    """,
-                    (s.instrument_id, s.timeframe, s.candle_close, s.regime_rule_version, s.regime.value, Jsonb(s.features)),
-                )
-                new += cur.rowcount
-        return new
+            cur.executemany(
+                """
+                insert into feature_snapshot (instrument_id, timeframe, candle_close, regime_rule_version, regime, features)
+                values (%s, %s, %s, %s, %s, %s) on conflict do nothing
+                """,
+                [
+                    (s.instrument_id, s.timeframe, s.candle_close, s.regime_rule_version, s.regime.value, Jsonb(s.features))
+                    for s in snapshots
+                ],
+            )
+            return cur.rowcount
 
     def insert_signal(self, signal: Signal) -> bool:
         d = signal.decision
