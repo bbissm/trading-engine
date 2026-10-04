@@ -36,7 +36,28 @@ const GRANTS = {
   reservation: "insert, update, delete",
   equity_snapshot: "insert",
   signal_outcome: "insert",
+  // Schema v3: Benachrichtigung, FX, Lernlabor, Freigaben, Live-Vorbereitung
+  fx_rate: "insert, update",
+  alert: "insert, update",
+  alert_delivery: "insert",
+  channel_status: "insert, update",
+  experiment: "insert, update",
+  experiment_trial: "insert",
+  gate_evaluation: "insert",
+  holdout_access: "insert",
+  approval: "insert",
+  mandate: "update",
+  policy_change: "update",
+  reconciliation: "insert",
+  order_approval: "insert, update",
+  execution_metric: "insert",
 };
+// Spaltenrechte: die Engine darf nur den Lebenszyklus einer Strategieversion fortschreiben, nie ihre Parameter.
+const COLUMN_GRANTS = [
+  `grant update (lifecycle_status) on strategy_version to te_engine`,
+  `grant update (status, result, handled_at) on command to te_engine`,
+  `grant update (permissions) on account to te_engine`,
+];
 
 const statements = [
   `do $$ begin
@@ -51,7 +72,7 @@ const statements = [
   `grant select on all tables in schema public to ${ROLE}`,
   `grant usage, select on all sequences in schema public to ${ROLE}`,
   ...Object.entries(GRANTS).map(([table, privileges]) => `grant ${privileges} on "${table}" to ${ROLE}`),
-  `grant update (status, result, handled_at) on command to ${ROLE}`,
+  ...COLUMN_GRANTS,
 ];
 
 if (/\.neon\.tech|neon\.build/.test(url)) {

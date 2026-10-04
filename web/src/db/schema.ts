@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import { boolean, bigserial, index, integer, jsonb, numeric, pgTable, primaryKey, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 
 /**
@@ -6,7 +7,7 @@ import { boolean, bigserial, index, integer, jsonb, numeric, pgTable, primaryKey
  * bei jeder Migration SCHEMA_VERSION erhöhen (hier und in engine/src/tradingengine/schema_version.py).
  * Preise/Mengen sind `numeric` – nie Float. Zeitstempel immer UTC.
  */
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 3;
 
 const price = (name: string) => numeric(name, { precision: 28, scale: 10 });
 const ts = (name: string) => timestamp(name, { withTimezone: true });
@@ -205,6 +206,11 @@ export const accounts = pgTable(
     name: text("name").notNull(),
     currency: text("currency").notNull(),
     createdAt: ts("created_at").notNull().defaultNow(),
+    /** Nur LIVE: Anbieter (z. B. KRAKEN) und dessen Kontokennung; Zugangsdaten liegen nie in der Datenbank. */
+    provider: text("provider"),
+    providerAccountRef: text("provider_account_ref"),
+    /** Zuletzt geprüfte Schlüsselrechte, z. B. { trade: true, query: true, withdraw: false, checkedAt } */
+    permissions: jsonb("permissions").$type<Record<string, unknown>>(),
   },
   (t) => [uniqueIndex("account_id_mode_idx").on(t.id, t.mode)],
 );
@@ -372,3 +378,251 @@ export const signalOutcomes = pgTable(
   },
   (t) => [primaryKey({ columns: [t.signalId, t.accountId, t.episodeId] })],
 );
+
+// ───────────────────────── Schema v3: Benachrichtigung, FX, Lernlabor, Freigaben, Live-Vorbereitung ─────────────────────────
+
+/** Tageskurse für die Bewertung in Berichtswährung (Quelle sichtbar). Realisierte Umrechnungen beim Anbieter haben Vorrang. */
+export const fxRates = pgTable(
+  "fx_rate",
+  {
+    base: text("base").notNull(),
+    quote: text("quote").notNull(),
+    date: text("date").notNull(), // YYYY-MM-DD (Fixing-Datum)
+    rate: numeric("rate", { precision: 28, scale: 10 }).notNull(),
+    /** z. B. "ecb-frankfurter" */
+    source: text("source").notNull(),
+    fetchedAt: ts("fetched_at").notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.base, t.quote, t.date] })],
+);
+
+/** Schlüssel-Wert-Einstellungen (Benachrichtigung, Ruhezeiten, Kanalausfall-Policy …). */
+export const settings = pgTable("setting", {
+  key: text("key").primaryKey(),
+  value: jsonb("value").$type<unknown>().notNull(),
+  updatedAt: ts("updated_at").notNull().defaultNow(),
+  updatedBy: text("updated_by").notNull(),
+});
+
+/**
+ * Meldung (docs/06, Abschnitt 4). Ein offener Zustand mit gleichem `dedup_key` aktualisiert die bestehende
+ * Meldung statt eine neue zu erzeugen. Bestätigen stoppt die Eskalation, genehmigt aber nie einen Trade.
+ */
+export const alerts = pgTable(
+  "alert",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    createdAt: ts("created_at").notNull().defaultNow(),
+    updatedAt: ts("updated_at").notNull().defaultNow(),
+    /** INFO | SIGNAL | WARNING | CRITICAL */
+    level: text("level").notNull(),
+    /** PAPER | LIVE | RESEARCH | SYSTEM */
+    mode: text("mode").notNull(),
+    kind: text("kind").notNull(),
+    dedupKey: text("dedup_key").notNull(),
+    title: text("title").notNull(),
+    body: text("body").notNull(),
+    data: jsonb("data").$type<Record<string, unknown>>(),
+    /** OPEN | ACKNOWLEDGED | RESOLVED */
+    status: text("status").notNull().default("OPEN"),
+    occurrences: integer("occurrences").notNull().default(1),
+    acknowledgedAt: ts("acknowledged_at"),
+    acknowledgedBy: text("acknowledged_by"),
+    resolvedAt: ts("resolved_at"),
+    escalationLevel: integer("escalation_level").notNull().default(0),
+    nextEscalationAt: ts("next_escalation_at"),
+    lastSentAt: ts("last_sent_at"),
+  },
+  (t) => [
+    uniqueIndex("alert_dedup_open_idx").on(t.dedupKey).where(sql`${t.status} <> 'RESOLVED'`),
+    index("alert_status_idx").on(t.status, t.level, t.createdAt),
+  ],
+);
+
+/** Zustellversuch je Kanal. «Vom Kanal angenommen» ist nicht «gelesen»; nur die Bestätigung stoppt die Eskalation. */
+export const alertDeliveries = pgTable(
+  "alert_delivery",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    alertId: integer("alert_id").notNull(),
+    /** IN_APP | TELEGRAM | PUSHOVER | EMAIL | SMS */
+    channel: text("channel").notNull(),
+    at: ts("at").notNull().defaultNow(),
+    /** SENT | FAILED | SKIPPED_QUIET_HOURS | SKIPPED_DISABLED */
+    status: text("status").notNull(),
+    providerRef: text("provider_ref"),
+    error: text("error"),
+  },
+  (t) => [index("alert_delivery_alert_idx").on(t.alertId, t.at)],
+);
+
+/** Erreichbarkeit der Kanäle und letzter Testalarm (docs/06, 4.3). */
+export const channelStatus = pgTable("channel_status", {
+  channel: text("channel").primaryKey(),
+  configured: boolean("configured").notNull().default(false),
+  ok: boolean("ok").notNull().default(false),
+  detail: text("detail"),
+  lastCheckAt: ts("last_check_at"),
+  lastTestSentAt: ts("last_test_sent_at"),
+  lastTestAckAt: ts("last_test_ack_at"),
+});
+
+/** Lernlabor-Lauf (docs/04, 5.5). Jeder Lauf endet mit genau einem Ergebnis; gescheiterte bleiben sichtbar. */
+export const experiments = pgTable(
+  "experiment",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    createdAt: ts("created_at").notNull().defaultNow(),
+    /** BACKTEST | WALK_FORWARD | OPTIMIZE | HOLDOUT | METALABEL */
+    kind: text("kind").notNull(),
+    /** Strategiefamilie, z. B. s1-trend-pullback */
+    strategy: text("strategy").notNull(),
+    strategyVersionId: text("strategy_version_id"),
+    hypothesis: text("hypothesis").notNull(),
+    config: jsonb("config").$type<Record<string, unknown>>().notNull(),
+    datasetHash: text("dataset_hash"),
+    dataFrom: ts("data_from"),
+    dataTo: ts("data_to"),
+    /** PLANNED | RUNNING | PAUSED | DONE | ABORTED */
+    status: text("status").notNull(),
+    /** KANDIDAT | KEIN_BELASTBARER_FORTSCHRITT | ZU_WENIG_DATEN | ABGELEHNT | ABGEBROCHEN */
+    outcome: text("outcome"),
+    summary: jsonb("summary").$type<Record<string, unknown>>(),
+    progress: jsonb("progress").$type<Record<string, unknown>>(),
+    variantsTested: integer("variants_tested").notNull().default(0),
+    cpuSeconds: numeric("cpu_seconds", { precision: 14, scale: 3 }).notNull().default("0"),
+    startedAt: ts("started_at"),
+    finishedAt: ts("finished_at"),
+    issuedBy: text("issued_by").notNull(),
+  },
+  (t) => [index("experiment_status_idx").on(t.status, t.createdAt)],
+);
+
+/** Jede getestete Variante – auch abgebrochene und schlechte – zählt für DSR/PBO. Append-only. */
+export const experimentTrials = pgTable(
+  "experiment_trial",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    experimentId: integer("experiment_id").notNull(),
+    variant: jsonb("variant").$type<Record<string, unknown>>().notNull(),
+    metrics: jsonb("metrics").$type<Record<string, unknown>>().notNull(),
+    folds: jsonb("folds").$type<unknown[]>(),
+    createdAt: ts("created_at").notNull().defaultNow(),
+  },
+  (t) => [index("experiment_trial_idx").on(t.experimentId)],
+);
+
+/** Ergebnis eines Gates (G1–G5) für eine Strategieversion mit Ist/Soll je Kriterium. Append-only. */
+export const gateEvaluations = pgTable(
+  "gate_evaluation",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    strategyVersionId: text("strategy_version_id").notNull(),
+    /** G1 | G2 | G3 | G4 | G5 */
+    gate: text("gate").notNull(),
+    /** PASSED | FAILED | INSUFFICIENT */
+    result: text("result").notNull(),
+    criteria: jsonb("criteria").$type<{ name: string; actual: string; required: string; passed: boolean | null }[]>().notNull(),
+    reasons: jsonb("reasons").$type<string[]>().notNull(),
+    gateConfigVersion: text("gate_config_version").notNull(),
+    experimentId: integer("experiment_id"),
+    evaluatedAt: ts("evaluated_at").notNull().defaultNow(),
+  },
+  (t) => [index("gate_eval_version_idx").on(t.strategyVersionId, t.gate, t.evaluatedAt)],
+);
+
+/** Zugriff auf den Endprüfungs-Holdout (einmal je Strategiefamilie). Append-only. */
+export const holdoutAccesses = pgTable("holdout_access", {
+  id: bigserial("id", { mode: "number" }).primaryKey(),
+  strategy: text("strategy").notNull(),
+  experimentId: integer("experiment_id").notNull(),
+  accessedAt: ts("accessed_at").notNull().defaultNow(),
+});
+
+/** Freigabe-Vorschlag und Entscheid (docs/01, 3.5). Das System schlägt vor; entscheiden kann nur der Nutzer. */
+export const approvals = pgTable("approval", {
+  id: bigserial("id", { mode: "number" }).primaryKey(),
+  strategyVersionId: text("strategy_version_id").notNull(),
+  proposedAt: ts("proposed_at").notNull().defaultNow(),
+  proposedBy: text("proposed_by").notNull(),
+  /** PENDING | SHADOW | APPROVED_LIVE | REJECTED | WITHDRAWN */
+  decision: text("decision").notNull().default("PENDING"),
+  decidedAt: ts("decided_at"),
+  decidedBy: text("decided_by"),
+  note: text("note"),
+  replacesVersionId: text("replaces_version_id"),
+});
+
+/** Handlungsvollmacht für ein Live-Konto (docs/01, 3.7). Ohne aktives Mandat entsteht keine Live-Order. */
+export const mandates = pgTable("mandate", {
+  id: bigserial("id", { mode: "number" }).primaryKey(),
+  accountId: text("account_id").notNull(),
+  /** 1 informieren | 2 vorbereiten | 3 Mandat */
+  autonomyLevel: integer("autonomy_level").notNull(),
+  strategyVersionIds: jsonb("strategy_version_ids").$type<string[]>().notNull(),
+  instrumentIds: jsonb("instrument_ids").$type<string[]>().notNull(),
+  budget: numeric("budget", { precision: 28, scale: 10 }).notNull(),
+  policy: jsonb("policy").$type<Record<string, unknown>>().notNull(),
+  /** DRAFT | ACTIVE | SUSPENDED | ENDED */
+  status: text("status").notNull().default("DRAFT"),
+  createdAt: ts("created_at").notNull().defaultNow(),
+  activatedAt: ts("activated_at"),
+  activatedBy: text("activated_by"),
+  stepUpAt: ts("step_up_at"),
+  validUntil: ts("valid_until"),
+  endedAt: ts("ended_at"),
+  endReason: text("end_reason"),
+});
+
+/** Änderung einer Risikopolicy: Senken wirkt sofort, Erhöhen bei Live erst nach Wartezeit (docs/02, 3.4). */
+export const policyChanges = pgTable("policy_change", {
+  id: bigserial("id", { mode: "number" }).primaryKey(),
+  accountId: text("account_id").notNull(),
+  policy: jsonb("policy").$type<Record<string, unknown>>().notNull(),
+  requestedAt: ts("requested_at").notNull().defaultNow(),
+  requestedBy: text("requested_by").notNull(),
+  effectiveAt: ts("effective_at").notNull(),
+  /** PENDING | APPLIED | CANCELED */
+  status: text("status").notNull().default("PENDING"),
+  appliedAt: ts("applied_at"),
+});
+
+/** Abgleich lokaler Bestand ↔ Anbieter (docs/06, 3.4). Append-only. */
+export const reconciliations = pgTable(
+  "reconciliation",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    accountId: text("account_id").notNull(),
+    at: ts("at").notNull().defaultNow(),
+    /** OK | DIFF | ERROR */
+    status: text("status").notNull(),
+    diffs: jsonb("diffs").$type<Record<string, unknown>[]>().notNull(),
+  },
+  (t) => [index("reconciliation_account_idx").on(t.accountId, t.at)],
+);
+
+/** Autonomiestufe 2: vorbereitete Order wartet auf Freigabe; ohne Antwort verfällt sie (Schweigen ist keine Erlaubnis). */
+export const orderApprovals = pgTable("order_approval", {
+  id: bigserial("id", { mode: "number" }).primaryKey(),
+  accountId: text("account_id").notNull(),
+  signalId: uuid("signal_id").notNull(),
+  intent: jsonb("intent").$type<Record<string, unknown>>().notNull(),
+  createdAt: ts("created_at").notNull().defaultNow(),
+  expiresAt: ts("expires_at").notNull(),
+  /** PENDING | APPROVED | REJECTED | EXPIRED */
+  status: text("status").notNull().default("PENDING"),
+  decidedAt: ts("decided_at"),
+  decidedBy: text("decided_by"),
+});
+
+/** Ausführungs-Qualität: Signal → Order → Fill, Abweichung zum Modellpreis (docs/06, 3.6). */
+export const executionMetrics = pgTable("execution_metric", {
+  id: bigserial("id", { mode: "number" }).primaryKey(),
+  accountId: text("account_id").notNull(),
+  orderId: text("order_id").notNull(),
+  signalToOrderMs: integer("signal_to_order_ms"),
+  orderToAckMs: integer("order_to_ack_ms"),
+  fillToProtectMs: integer("fill_to_protect_ms"),
+  slippageBps: numeric("slippage_bps", { precision: 14, scale: 4 }),
+  at: ts("at").notNull().defaultNow(),
+});
