@@ -192,6 +192,7 @@ def _run_account(repo: LiveRepo, ex: Exchange, acc: dict[str, Any], now: datetim
     ctx.reload()
     recon_status = _reconcile(ctx)
     _resolve_unknown(ctx)
+    _cancel_orphan_sells(ctx)
 
     # 3. Bedienbefehle
     market = live_commands.MarketView(lambda i: _quote(ctx, i) if i in ctx.instruments else None, lambda: _equity(ctx)[0])
@@ -681,6 +682,15 @@ def _sent_at(repo: LiveRepo, order_id: str) -> datetime | None:
 def _sells(ctx: Ctx, trade_id: str, role: OrderRole | None = None) -> list[LiveOrder]:
     return [lo for lo in ctx.orders.values() if lo.trade_id == trade_id and lo.order.side is Side.SELL and not lo.order.is_terminal
             and (role is None or lo.order.role is role)]
+
+
+def _cancel_orphan_sells(ctx: Ctx) -> None:
+    """Verkaufsorders (Stop, Ziel, Exit) eines nicht mehr offenen Trades stornieren – etwa nach einem vollständigen
+    Verkauf ausserhalb von TradingEngine. Sonst verkaufte ein liegengebliebener Stop später einen manuellen Rückkauf."""
+    for lo in list(ctx.orders.values()):
+        if lo.order.side is Side.SELL and not lo.order.is_terminal and lo.trade_id is not None and lo.trade_id not in ctx.trades:
+            if _cancel(ctx, lo, "Trade geschlossen – verwaiste Verkaufsorder storniert"):
+                ctx.orders.pop(lo.order.id, None)
 
 
 def _protect_all(ctx: Ctx, mandate: Mandate | None) -> None:

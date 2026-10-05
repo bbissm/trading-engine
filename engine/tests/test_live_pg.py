@@ -752,6 +752,23 @@ def test_t16_manual_partial_sell_shrinks_position_and_stop(ready: Env) -> None:
     assert env.sql("select status from reconciliation order by id desc limit 1")[0]["status"] == "OK"
 
 
+def test_t16_full_manual_sell_cancels_leftover_stop_before_rebuy(ready: Env) -> None:
+    """Wird eine verwaltete Position ausserhalb von TradingEngine ganz verkauft, darf ihr Stop nicht bei Kraken
+    liegen bleiben – sonst verkaufte er einen späteren manuellen Rückkauf."""
+    env = ready
+    _sid, _cl, qty = _enter(env)
+    assert env.stops_at_fake()
+    env.fake.manual_sell("AAA", str(qty))
+    env.tick()
+    assert env.sql("select status, exit_reason from trade order by opened_at desc limit 1")[0]["status"] == "CLOSED"
+    env.tick()  # Storno bestätigen lassen
+    assert env.stops_at_fake() == []
+    env.fake.deposit_foreign("AAA", str(qty))
+    env.tick()
+    assert env.fake._bal("AAA") == qty  # Rückkauf bleibt unangetastet (fremd, nicht verwaltet)
+    assert not [o for o in env.fake.working() if o.side == "sell" and o.pair == "AAAUSD"]
+
+
 def _assign(env: Env, instrument_id: str = BBB, strategy: str = S2, stop: str = "95", step_up: bool = True) -> int:
     params: dict[str, Any] = {"instrument_id": instrument_id, "strategy_version_id": strategy, "stop": stop}
     if step_up:
