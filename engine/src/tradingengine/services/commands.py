@@ -18,7 +18,7 @@ ACTOR = "engine:commands"
 # Live-Befehle verarbeitet nur der Live-Prozess. Bewusst als Liste hier statt als Import aus tradingengine.live,
 # damit der Paper-/Signalprozess das Live-Paket nie lädt (Strukturtest T3).
 LIVE_COMMAND_TYPES = frozenset({"LIVE_ACCOUNT_REGISTER", "LIVE_PAUSE", "LIVE_RESUME", "LIVE_STOP", "LIVE_CLOSE_ALL", "LIVE_EMERGENCY",
-                                "ORDER_APPROVAL_DECIDE", "MANDATE_SUSPEND"})
+                                "ORDER_APPROVAL_DECIDE", "MANDATE_SUSPEND", "LIVE_ASSIGN_POSITION"})
 
 
 def process_pending(store: Store, now: datetime, paper_repo: PaperRepo | None = None, conn: Any = None) -> int:

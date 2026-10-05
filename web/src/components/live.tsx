@@ -1,4 +1,5 @@
 import Link from "next/link";
+import type { ReactNode } from "react";
 import { liveState, type Check } from "@/app/live/model";
 import type { LiveOverview, LiveSnapshot } from "@/lib/data/live";
 import { ago, dateTime, decimal, price } from "@/lib/format";
@@ -84,13 +85,27 @@ type Position = LiveOverview["positions"][number];
 type Order = LiveOverview["orders"][number];
 type FillRow = LiveOverview["fills"][number];
 
-export function LivePositions({ rows, snapshot }: { rows: Position[]; snapshot: LiveSnapshot | null }) {
+/** Trade adopted from a foreign position (engine: live/commands.py `_assign`): result counts from the adoption value. */
+const adopted = (p: Position) => (p.exitPlan as { _live?: { adopted_cost_basis_unknown?: unknown } } | null)?._live?.adopted_cost_basis_unknown === true;
+
+export function LivePositions({ rows, snapshot, foreignAction }: { rows: Position[]; snapshot: LiveSnapshot | null; foreignAction?: (instrumentId: string, qty: string) => ReactNode }) {
   const foreign = Object.entries(snapshot?.foreign ?? {});
   const columns: Column<Position>[] = [
     { label: "Instrument", cell: (p) => <span className="font-medium">{p.instrumentId}</span> },
     { label: "Strategieversion", wide: true, cell: (p) => <span className="break-all font-mono text-xs">{p.strategyVersionId}</span> },
     { label: "Menge", num: true, cell: (p) => decimal(p.qty, 0) },
-    { label: "Ø Einstieg", num: true, cell: (p) => price(p.avgEntry, "USD") },
+    {
+      label: "Ø Einstieg",
+      num: true,
+      cell: (p) =>
+        adopted(p) ? (
+          <span title="Fremde Position, einer Strategie zugeordnet: Einstand = Geldkurs bei der Übernahme, frühere Kostenbasis unbekannt">
+            {price(p.avgEntry, "USD")} <span className="text-xs text-ink-2">(Übernahme, Kostenbasis davor unbekannt)</span>
+          </span>
+        ) : (
+          price(p.avgEntry, "USD")
+        ),
+    },
     { label: "Stop bei Kraken", num: true, cell: (p) => price(p.currentStop, "USD") },
     { label: "Geplantes Risiko", num: true, cell: (p) => price(p.plannedRisk, "USD") },
     { label: "Ausstieg angefordert", wide: true, cell: (p) => p.exitReason ?? "—" },
@@ -102,11 +117,17 @@ export function LivePositions({ rows, snapshot }: { rows: Position[]; snapshot: 
       {foreign.length > 0 && (
         <div className="rounded-lg border border-line p-3">
           <div className="text-sm font-semibold">Fremd – nicht verwaltet</div>
-          <p className="text-xs text-ink-2">Bestände bei Kraken, die nicht aus TradingEngine-Orders stammen: angezeigt und im Budget/in der Konzentration als belegt gezählt, nie gehandelt.</p>
-          <ul className="mt-2 text-sm">
+          <p className="text-xs text-ink-2">
+            Bestände bei Kraken, die nicht aus TradingEngine-Orders stammen: angezeigt und im Budget/in der Konzentration als belegt gezählt, nie automatisch gehandelt – ausser du ordnest sie ausdrücklich einer
+            Strategie zu.
+          </p>
+          <ul className="mt-2 space-y-3 text-sm">
             {foreign.map(([instrumentId, qty]) => (
-              <li key={instrumentId} className="tabular">
-                {instrumentId}: {decimal(qty, 0)}
+              <li key={instrumentId} className="space-y-2">
+                <div className="tabular">
+                  {instrumentId}: {decimal(qty, 0)}
+                </div>
+                {foreignAction?.(instrumentId, qty)}
               </li>
             ))}
           </ul>

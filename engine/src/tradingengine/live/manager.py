@@ -4,7 +4,7 @@ Reihenfolge je Konto (Wiederherstellungsreihenfolge docs/06, 3.5 – fest):
   1. Verbindung und Authentifizierung (Systemstatus, Kontostand)
   2. Abgleich: Fills seit letztem Stand, Orders, Bestände; fremde Positionen/Orders; manuelle Verkäufe
      (a) und Klärung von Orders im Zustand UNKNOWN über die cl_ord_id, ohne erneutes Senden (b)
-  3. Bedienbefehle (Pause, Stopp, Schliessen, Notfall, Freigaben)
+  3. Bedienbefehle (Pause, Stopp, Schliessen, Notfall, Freigaben, Zuordnung fremder Positionen)
   4. Schutz jeder verwalteten Position prüfen und reparieren (Stop bei Kraken = gehaltene Menge) (c)
   5. Einstiegsorders gegen Gültigkeit und Zustand prüfen, abgelaufene/unerwünschte stornieren
   6. Verlustgrenzen neu bewerten
@@ -194,11 +194,14 @@ def _run_account(repo: LiveRepo, ex: Exchange, acc: dict[str, Any], now: datetim
     _resolve_unknown(ctx)
 
     # 3. Bedienbefehle
+    market = live_commands.MarketView(lambda i: _quote(ctx, i) if i in ctx.instruments else None, lambda: _equity(ctx)[0])
     for cmd in live_commands.pending(repo.c, live_commands.ACCOUNT_COMMANDS):
         if cmd.target not in (None, aid) and cmd.type != "ORDER_APPROVAL_DECIDE":
             continue
-        status, result = live_commands.handle(repo.c, cmd, now, ex, cfg.fingerprint)
+        status, result = live_commands.handle(repo.c, cmd, now, ex, cfg.fingerprint, market)
         live_commands.complete(repo.c, cmd, status, result, now)
+        if cmd.type == live_commands.ASSIGN and status == "DONE":
+            ctx.foreign.pop(str(result["instrument_id"]), None)  # ab jetzt verwaltet, nicht fremd (sonst doppelt im Eigenkapital)
     ctx.reload()
 
     mandate = _mandate(ctx, cfg)
