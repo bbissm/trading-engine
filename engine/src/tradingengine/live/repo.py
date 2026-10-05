@@ -63,8 +63,11 @@ class InstrumentRow:
 
 
 class LiveRepo:
-    def __init__(self, conn: Conn) -> None:
+    def __init__(self, conn: Conn, now: datetime | None = None) -> None:
         self.c = conn
+        # Zeit des Durchlaufs: Auditzeitpunkte (z. B. «Order gesendet») folgen der Uhr der Engine, nicht der DB-Uhr,
+        # sonst hängt die Deadline-Prüfung verlorener Orders von der Abweichung beider Uhren ab.
+        self.now = now
 
     # --- Sperre gegen parallele Durchläufe ------------------------------------------------------------
     def try_lock(self) -> bool:
@@ -341,7 +344,8 @@ class LiveRepo:
 
     # --- Protokoll, Kennzahlen, Lebenszeichen ---------------------------------------------------------
     def audit(self, kind: str, obj: str | None, data: dict[str, Any] | None = None) -> None:
-        self.c.execute("insert into audit_event (actor, kind, object, data) values (%s, %s, %s, %s)", (ACTOR, kind, obj, None if data is None else Jsonb(data)))
+        self.c.execute("insert into audit_event (actor, kind, object, data, ts) values (%s, %s, %s, %s, coalesce(%s, now()))",
+                       (ACTOR, kind, obj, None if data is None else Jsonb(data), self.now))
 
     def metric(self, account_id: str, order_id: str, now: datetime, signal_to_order_ms: int | None = None, order_to_ack_ms: int | None = None,
                fill_to_protect_ms: int | None = None, slippage_bps: Decimal | None = None) -> None:

@@ -14,6 +14,7 @@ from http.server import BaseHTTPRequestHandler
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
+from tradingengine.deployment import runs_live  # noqa: E402
 from tradingengine.live.locks import live_enabled  # noqa: E402
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s %(message)s")
@@ -25,6 +26,9 @@ class handler(BaseHTTPRequestHandler):  # noqa: N801 (Name von der Vercel-Python
         provided = self.headers.get("authorization", "")
         if not secret or not hmac.compare_digest(provided, f"Bearer {secret}"):
             self._send(401, {"error": "unauthorized"})
+            return
+        if not runs_live():
+            self._send(200, {"live": "disabled", "reason": "Live läuft nur im Projekt mit ENGINE_ROLE=live"})
             return
         if not live_enabled():
             self._send(200, {"live": "disabled"})

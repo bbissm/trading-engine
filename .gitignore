@@ -14,3 +14,4 @@ __pycache__/
 dist/
 .vercel/
 .claude/
+.vercel-live/

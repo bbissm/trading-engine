@@ -131,3 +131,23 @@ und für die Ein-Benutzer-Regeln). Abweichungen und Präzisierungen gegenüber d
 - Die Engine-Rolle hat auf die `auth_*`-Tabellen keinerlei Rechte (ausdrückliches `revoke` in
   `scripts/roles.mjs`). Anmeldeereignisse stehen wie alle anderen in `audit_event` (für die Engine lesbar,
   ohne Geheimnisse: Art, Methode, IP, User-Agent).
+
+## E-8 · Live läuft in einem eigenen Vercel-Projekt mit eigener Datenbankrolle (5.10.2026)
+
+- Projekte: `trading-engine-worker` (`ENGINE_ROLE=worker`: Tick, Paper, Meldungen, Lernlabor) und
+  `trading-engine-live` (`ENGINE_ROLE=live`: nur der Live-Autopilot). Beide deployen `engine/` mit derselben
+  `vercel.json`; die jeweils fremden Cron-Endpunkte antworten mit «skipped» bzw. «disabled». Kraken-Schlüssel
+  und `LIVE_TRADING_ENABLED` werden **nur** im Live-Projekt gesetzt; ohne `ENGINE_ROLE=live` entsteht nie ein
+  Handelsclient, selbst wenn Schlüssel und Schalter vorhanden wären.
+- Datenbank: `te_engine` und `te_live` aus `web/scripts/roles.sql`. Row-Level-Security erzwingt den Modus bei
+  Konten, Orders, Fills, Trades, Reservierungen, Autopilot-Zuständen, Eigenkapital und Signal-Ergebnissen:
+  `te_engine` schreibt nur PAPER, `te_live` nur LIVE. `te_live` kann weder Signale, Experimente noch Freigaben
+  schreiben. Beide lesen alles ausser den Anmeldetabellen (Test: `engine/tests/test_roles_pg.py`).
+
+## E-9 · Kein lokales Fill-Journal bei Datenbankausfall (5.10.2026)
+
+Der Plan (docs/05 3.3, T26) sah ein lokales Journal auf dem Engine-Server vor. Auf Vercel gibt es keinen
+dauerhaften lokalen Speicher. Stattdessen: Fällt die Datenbank aus, entstehen keine neuen Einstiege (ohne
+gespeicherte Absicht keine Order); Kraken selbst ist das Journal der Ausführungen, und der Abgleich holt Fills
+und Bestände beim nächsten erfolgreichen Durchlauf nach (TradesHistory, offene/geschlossene Orders). Die
+Schutz-Stops liegen in dieser Zeit bei Kraken. Getestet ist der Fall «Datenbank fällt nach dem Senden aus».

@@ -121,7 +121,7 @@ class Ctx:
 
 def run_tick(conn: Any, ex: Exchange | None, now: datetime, cfg: LiveConfig) -> dict[str, Any]:
     """Ein Live-Durchlauf. `ex` ist None, wenn keine Schlüssel vorhanden sind (dann geschieht nichts beim Anbieter)."""
-    repo = LiveRepo(conn)
+    repo = LiveRepo(conn, now)
     if not cfg.enabled:
         return {"live": "disabled"}
     if ex is None:

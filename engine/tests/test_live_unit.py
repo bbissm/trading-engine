@@ -256,7 +256,9 @@ def test_lock1_and_lock2_gate_client_construction() -> None:
     assert open_live_exchange({}) is None
     assert open_live_exchange({"LIVE_TRADING_ENABLED": "1", "KRAKEN_API_KEY": "k", "KRAKEN_API_SECRET": FAKE_SECRET}) is None
     assert open_live_exchange({"LIVE_TRADING_ENABLED": "true", "KRAKEN_API_KEY": "k"}) is None
-    assert open_live_exchange({"LIVE_TRADING_ENABLED": "true", "KRAKEN_API_KEY": "k", "KRAKEN_API_SECRET": FAKE_SECRET}) is not None
+    # im Worker-Projekt (ENGINE_ROLE fehlt oder «worker») entsteht nie ein Client, auch mit Schlüsseln und Flag
+    assert open_live_exchange({"LIVE_TRADING_ENABLED": "true", "KRAKEN_API_KEY": "k", "KRAKEN_API_SECRET": FAKE_SECRET}) is None
+    assert open_live_exchange({"LIVE_TRADING_ENABLED": "true", "KRAKEN_API_KEY": "k", "KRAKEN_API_SECRET": FAKE_SECRET, "ENGINE_ROLE": "live"}) is not None
     assert not locks.live_enabled({}) and locks.live_enabled({"LIVE_TRADING_ENABLED": "true"})
 
 
@@ -296,6 +298,7 @@ def test_t3_live_api_returns_disabled_without_flag(monkeypatch: pytest.MonkeyPat
 
     monkeypatch.delenv("LIVE_TRADING_ENABLED", raising=False)
     monkeypatch.setenv("CRON_SECRET", "s3cr3t")
+    monkeypatch.setenv("ENGINE_ROLE", "live")
     spec = importlib.util.spec_from_file_location("live_api", API / "live.py")
     assert spec and spec.loader
     mod = importlib.util.module_from_spec(spec)

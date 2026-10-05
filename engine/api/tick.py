@@ -14,6 +14,7 @@ from http.server import BaseHTTPRequestHandler
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from tradingengine.cli import tick  # noqa: E402
+from tradingengine.deployment import runs_worker  # noqa: E402
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s %(message)s")
 
@@ -24,6 +25,9 @@ class handler(BaseHTTPRequestHandler):  # noqa: N801 (Name von der Vercel-Python
         provided = self.headers.get("authorization", "")
         if not secret or not hmac.compare_digest(provided, f"Bearer {secret}"):
             self._send(401, {"error": "unauthorized"})
+            return
+        if not runs_worker():
+            self._send(200, {"skipped": "ENGINE_ROLE=live – dieses Projekt führt nur den Live-Autopiloten aus"})
             return
         dsn = os.environ.get("DATABASE_URL")
         if not dsn:

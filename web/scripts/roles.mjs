@@ -1,90 +1,30 @@
-// Creates/updates the database role the engine connects with (least privilege) and prints the
-// non-secret connection coordinates (host, database) so the engine server can be configured.
+// Creates/updates the database roles of the engine (least privilege, row-level security per mode) from
+// scripts/roles.sql and prints the non-secret connection coordinates (host, database) for configuring the engine.
 // Runs after the migrations in the Vercel build, where the database credentials are available.
-// Skipped when TE_ENGINE_DB_PASSWORD is not set. Idempotent.
-const url = process.env.DATABASE_URL_UNPOOLED ?? process.env.DATABASE_URL ?? process.env.POSTGRES_URL;
-const password = process.env.TE_ENGINE_DB_PASSWORD;
-const ROLE = "te_engine";
+// Skipped when TE_ENGINE_DB_PASSWORD or TE_LIVE_DB_PASSWORD is not set. Idempotent.
+import { readFileSync } from "node:fs";
 
-if (!url || !password) {
-  console.log("[roles] DATABASE_URL or TE_ENGINE_DB_PASSWORD not set – skipping engine role");
+const url = process.env.DATABASE_URL_UNPOOLED ?? process.env.DATABASE_URL ?? process.env.POSTGRES_URL;
+const passwords = { ENGINE_PASSWORD: process.env.TE_ENGINE_DB_PASSWORD, LIVE_PASSWORD: process.env.TE_LIVE_DB_PASSWORD };
+
+if (!url || !passwords.ENGINE_PASSWORD || !passwords.LIVE_PASSWORD) {
+  console.log("[roles] DATABASE_URL, TE_ENGINE_DB_PASSWORD or TE_LIVE_DB_PASSWORD not set – skipping engine roles");
   process.exit(0);
 }
-if (!/^[A-Za-z0-9]{32,}$/.test(password)) {
-  console.error("[roles] TE_ENGINE_DB_PASSWORD must be at least 32 alphanumeric characters");
-  process.exit(1);
+for (const [name, value] of Object.entries(passwords)) {
+  if (!/^[A-Za-z0-9]{32,}$/.test(value)) {
+    console.error(`[roles] ${name === "ENGINE_PASSWORD" ? "TE_ENGINE_DB_PASSWORD" : "TE_LIVE_DB_PASSWORD"} must be at least 32 alphanumeric characters`);
+    process.exit(1);
+  }
 }
 
-// Tables the engine may write. Everything is readable; `signal`, `candle`, `feature_snapshot` and
-// `audit_event` are insert-only (append-only), `command` may only be acknowledged.
-const GRANTS = {
-  instrument: "insert, update",
-  feed_status: "insert, update",
-  heartbeat: "insert, update",
-  strategy_version: "insert",
-  candle: "insert",
-  feature_snapshot: "insert",
-  signal: "insert",
-  audit_event: "insert",
-  // Paper-Handel (Etappe 2). Getrennte Rollen für Paper/Live/Lab folgen mit dem Live-Orderweg (Etappe 4).
-  account: "insert",
-  episode: "insert, update",
-  autopilot: "insert, update",
-  trade: "insert, update",
-  trade_order: "insert, update",
-  fill: "insert",
-  reservation: "insert, update, delete",
-  equity_snapshot: "insert",
-  signal_outcome: "insert",
-  // Pause-Befehl aus einer Telegram-Schaltfläche (nur Paper, risikosenkend) wird als eigener Befehl eingereiht
-  command: "insert",
-  // Schema v3: Benachrichtigung, FX, Lernlabor, Freigaben, Live-Vorbereitung
-  fx_rate: "insert, update",
-  setting: "insert, update",
-  alert: "insert, update",
-  alert_delivery: "insert",
-  channel_status: "insert, update",
-  experiment: "insert, update",
-  experiment_trial: "insert",
-  gate_evaluation: "insert",
-  holdout_access: "insert",
-  approval: "insert",
-  mandate: "update",
-  policy_change: "update",
-  reconciliation: "insert",
-  order_approval: "insert, update",
-  execution_metric: "insert",
-};
-// Spaltenrechte: die Engine darf nur den Lebenszyklus einer Strategieversion fortschreiben, nie ihre Parameter.
-const COLUMN_GRANTS = [
-  `grant update (lifecycle_status) on strategy_version to te_engine`,
-  `grant update (status, result, handled_at) on command to te_engine`,
-  `grant update (permissions) on account to te_engine`,
-  // Freigabe-Entscheid (ablehnen/Shadow) kommt als Befehl des Nutzers; die Engine trägt nur ihn ein
-  `grant update (decision, decided_at, decided_by, note) on approval to te_engine`,
-];
-
-// Anmeldetabellen (Better Auth, E0-4): Passwort-Hash, TOTP-Geheimnis, Sitzungstoken. Die Engine braucht sie nie
-// und darf sie nicht einmal lesen – das pauschale «grant select» oben wird dafür ausdrücklich zurückgenommen.
-// Muss mit AUTH_TABLES in src/db/auth-schema.ts übereinstimmen (Test: src/lib/auth/auth-tables.test.ts).
-const AUTH_TABLES = ["auth_user", "auth_session", "auth_account", "auth_verification", "auth_two_factor", "auth_passkey", "auth_rate_limit"];
-
-const statements = [
-  `do $$ begin
-     if not exists (select from pg_roles where rolname = '${ROLE}') then
-       create role ${ROLE} login password '${password}';
-     else
-       alter role ${ROLE} login password '${password}';
-     end if;
-   end $$`,
-  `grant usage on schema public to ${ROLE}`,
-  `revoke all on all tables in schema public from ${ROLE}`,
-  `grant select on all tables in schema public to ${ROLE}`,
-  `grant usage, select on all sequences in schema public to ${ROLE}`,
-  ...Object.entries(GRANTS).map(([table, privileges]) => `grant ${privileges} on "${table}" to ${ROLE}`),
-  ...COLUMN_GRANTS,
-  ...AUTH_TABLES.map((table) => `revoke all privileges on "${table}" from ${ROLE}`),
-];
+const template = readFileSync(new URL("./roles.sql", import.meta.url), "utf8");
+const statements = template
+  .replaceAll("{{ENGINE_PASSWORD}}", passwords.ENGINE_PASSWORD)
+  .replaceAll("{{LIVE_PASSWORD}}", passwords.LIVE_PASSWORD)
+  .split(/^-- @@.*$/m)
+  .map((s) => s.trim())
+  .filter((s) => s.replace(/^--.*$/gm, "").trim().length > 0);
 
 if (/\.neon\.tech|neon\.build/.test(url)) {
   const { neon } = await import("@neondatabase/serverless");
@@ -102,4 +42,4 @@ if (/\.neon\.tech|neon\.build/.test(url)) {
 }
 
 const parsed = new URL(url);
-console.log(`[roles] engine role "${ROLE}" ready: host=${parsed.hostname} port=${parsed.port || 5432} database=${parsed.pathname.slice(1)}`);
+console.log(`[roles] engine roles te_engine, te_live ready: host=${parsed.hostname} port=${parsed.port || 5432} database=${parsed.pathname.slice(1)}`);

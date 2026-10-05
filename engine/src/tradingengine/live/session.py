@@ -13,6 +13,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from ..adapters.pg_store import PgStore
+from ..deployment import runs_live
 from ..schema_version import SCHEMA_VERSION
 from .kraken_private import KrakenPrivate
 from .locks import ENV_KEY, ENV_SECRET, key_fingerprint, keys_present, live_enabled
@@ -21,7 +22,7 @@ from .manager import LiveConfig, run_tick
 
 def open_live_exchange(env: Mapping[str, str] | None = None) -> KrakenPrivate | None:
     e = env if env is not None else os.environ
-    if not live_enabled(e) or not keys_present(e):
+    if not live_enabled(e) or not keys_present(e) or not runs_live(e):
         return None
     return KrakenPrivate(e[ENV_KEY], e[ENV_SECRET])
 
@@ -34,7 +35,7 @@ def config(env: Mapping[str, str], has_exchange: bool) -> LiveConfig:
 def run_live(env: Mapping[str, str] | None = None) -> dict[str, Any]:
     """Ein Live-Durchlauf für den Vercel-Cron `api/live.py`."""
     e = env if env is not None else os.environ
-    if not live_enabled(e):
+    if not live_enabled(e) or not runs_live(e):
         return {"live": "disabled"}
     dsn = e.get("LIVE_DATABASE_URL") or e.get("DATABASE_URL")
     if not dsn:

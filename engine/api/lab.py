@@ -24,6 +24,7 @@ from psycopg.rows import dict_row  # noqa: E402
 from psycopg.types.json import Jsonb  # noqa: E402
 
 from tradingengine.adapters.bitstamp_public import BitstampPublic  # noqa: E402
+from tradingengine.deployment import runs_worker  # noqa: E402
 from tradingengine.research import data, runner  # noqa: E402
 from tradingengine.schema_version import SCHEMA_VERSION  # noqa: E402
 
@@ -55,6 +56,9 @@ class handler(BaseHTTPRequestHandler):  # noqa: N801 (Name von der Vercel-Python
         provided = self.headers.get("authorization", "")
         if not secret or not hmac.compare_digest(provided, f"Bearer {secret}"):
             self._send(401, {"error": "unauthorized"})
+            return
+        if not runs_worker():
+            self._send(200, {"skipped": "ENGINE_ROLE=live – dieses Projekt führt nur den Live-Autopiloten aus"})
             return
         dsn = os.environ.get("DATABASE_URL")
         if not dsn:
