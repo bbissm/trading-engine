@@ -752,6 +752,157 @@ def test_t16_manual_partial_sell_shrinks_position_and_stop(ready: Env) -> None:
     assert env.sql("select status from reconciliation order by id desc limit 1")[0]["status"] == "OK"
 
 
+def _assign(env: Env, instrument_id: str = BBB, strategy: str = S2, stop: str = "95", step_up: bool = True) -> int:
+    params: dict[str, Any] = {"instrument_id": instrument_id, "strategy_version_id": strategy, "stop": stop}
+    if step_up:
+        params["step_up_at"] = env.now.isoformat()
+    return env.command("LIVE_ASSIGN_POSITION", **params)
+
+
+def _never_short(env: Env, asset: str = "BBB") -> None:
+    """Summe offener Verkaufsorders bei Kraken ≤ Bestand – es entsteht nie eine Short-Position."""
+    sells = sum((o.vol - o.vol_exec for o in env.fake.working() if o.side == "sell" and o.pair == f"{asset}USD"), D(0))
+    assert env.fake._bal(asset) >= 0 and sells <= env.fake._bal(asset)
+
+
+def test_t16_assign_foreign_position_places_stop_for_exact_quantity_and_trails(ready: Env) -> None:
+    env = ready
+    env.fake.deposit_foreign("BBB", "0.5")
+    env.tick()
+    assert env.sql("select 1 from alert where kind = 'live.foreign_position' and status <> 'RESOLVED'")
+    assert not env.stops_at_fake()  # fremd: nie gehandelt
+
+    cmd = _assign(env)
+    env.tick()
+    res = env.result(cmd)
+    assert res["status"] == "DONE", res
+    assert res["result"]["qty"] == "0.5" and res["result"]["cost_basis_unknown"] is True
+    trade = env.open_trade()
+    assert (trade["instrument_id"], trade["strategy_version_id"], trade["qty"], trade["signal_id"]) == (BBB, S2, D("0.5"), None)
+    assert trade["entry_value"] == D(50) and trade["entry_fees"] == 0 and trade["planned_stop"] == D(95) and trade["current_stop"] == D(95)
+    live = trade["exit_plan"]["_live"]
+    assert live["adopted_cost_basis_unknown"] is True and live["adopted_at"] and trade["exit_plan"]["trail_atr"] == 2.5
+    # Schutz im selben Durchlauf: genau ein Stop-Loss über genau die übernommene Menge
+    [stop] = env.stops_at_fake()
+    assert (stop.pair, stop.vol, stop.price) == ("BBBUSD", D("0.5"), D(95))
+    assert not env.sql("select 1 from alert where kind = 'live.foreign_position' and status <> 'RESOLVED'")
+    assert env.sql("select 1 from alert where kind = 'live.position_assigned'")
+    assert env.sql("select 1 from audit_event where kind = 'live.position.assigned' and object = %s", (f"trade:{trade['id']}",))
+    _never_short(env)
+
+    env.tick()
+    rec = env.sql("select * from reconciliation order by id desc limit 1")[0]
+    snap = next(d for d in rec["diffs"] if d["kind"] == "SNAPSHOT")
+    assert rec["status"] == "OK" and BBB not in snap["foreign"] and D(snap["managed"][BBB]) == D("0.5")
+    assert not [d for d in rec["diffs"] if d["kind"] == "FOREIGN_POSITION"]
+    assert len(env.stops_at_fake()) == 1
+
+    # Trailing nur enger
+    start = trade["managed_through"]
+    env.store.insert_candles([c4(BBB, start, "100", "111", "100", "110"), c4(BBB, start + H4, "110", "121", "110", "120")], env.now)
+    env.now = start + 2 * H4
+    env.tick()
+    tightened = env.open_trade()["current_stop"]
+    [stop] = env.stops_at_fake()
+    assert tightened > D(95) and stop.price == tightened and stop.vol == D("0.5")
+    env.store.insert_candles([c4(BBB, start + 2 * H4, "120", "120", "100", "101")], env.now)
+    env.now = start + 3 * H4
+    env.tick()
+    assert env.open_trade()["current_stop"] >= tightened and env.stops_at_fake()[0].price >= tightened
+    _never_short(env)
+
+    # Ergebnis ab Übernahmewert, Kostenbasis davor unbekannt (aber net berechenbar)
+    env.fake.trigger_stops("BBBUSD", str(env.open_trade()["current_stop"] - 1))
+    env.tick()
+    closed = env.sql("select * from trade where id = %s", (trade["id"],))[0]
+    assert closed["status"] == "CLOSED" and closed["net"] is not None and closed["entry_value"] == D(50)
+    assert closed["exit_plan"]["_live"]["adopted_cost_basis_unknown"] is True
+    _never_short(env)
+
+
+def test_t16_assign_rejections(ready: Env) -> None:
+    env = ready
+    env.fake.deposit_foreign("BBB", "0.5")
+    env.tick()
+    cases = {
+        "Step-up": _assign(env, step_up=False),
+        "nicht für Live freigegeben": _assign(env, strategy="s1-trend-pullback@1"),
+        "keine fremde Menge": _assign(env, instrument_id=AAA),
+        "unter dem aktuellen Geldkurs": _assign(env, stop="100"),
+        "Tick-Grösse": _assign(env, stop="95.001"),
+        "positive Zahl": _assign(env, stop="-1"),
+    }
+    old = env.command("LIVE_ASSIGN_POSITION", instrument_id=BBB, strategy_version_id=S2, stop="95", step_up_at=(env.now - timedelta(minutes=6)).isoformat())
+    env.tick()
+    for fragment, cmd in {**cases, "Step-up ": old}.items():
+        r = env.result(cmd)
+        assert r["status"] == "REJECTED" and fragment.strip() in r["result"]["reason"], (fragment, r)
+    assert not env.sql("select 1 from trade where account_id = %s", (ACC,))
+    assert not env.stops_at_fake()
+
+    # Risiko je Trade zu gross → Ablehnung mit Zahlen und Vorschlag für einen engeren Stop
+    env.fake.deposit_foreign("BBB", "4.5")
+    env.tick()
+    big = _assign(env, stop="95")
+    env.tick()
+    r = env.result(big)
+    assert r["status"] == "REJECTED" and "Grenze je Trade von 5.00 USD" in r["result"]["reason"] and "Stop ab etwa" in r["result"]["reason"], r
+    hint = D(r["result"]["reason"].rsplit("Stop ab etwa ", 1)[1].split(" ")[0])
+    tight = _assign(env, stop=str(hint))
+    env.tick()
+    assert env.result(tight)["status"] == "DONE", env.result(tight)
+    assert env.open_trade()["qty"] == D(5) and env.stops_at_fake()[0].vol == D(5)
+
+    # bereits verwaltet
+    again = _assign(env)
+    env.tick()
+    assert env.result(again)["status"] == "REJECTED" and "bereits verwaltet" in env.result(again)["result"]["reason"]
+    _never_short(env)
+
+
+def test_t16_assign_rejected_when_total_open_risk_too_large_or_quote_unknown(ready: Env) -> None:
+    env = ready
+    env.fake.deposit_foreign("BBB", "0.5")
+    env.sql("update mandate set policy = policy || '{\"risk\": {\"max_open_risk\": \"0.002\"}}'")
+    env.tick()
+    cmd = _assign(env)
+    env.tick()
+    r = env.result(cmd)
+    assert r["status"] == "REJECTED" and "Offenes Risiko wäre 2.90 USD > Grenze 2.00 USD" in r["result"]["reason"], r
+    env.sql("update mandate set policy = '{}'")
+    del env.fake.quotes["BBBUSD"]
+    cmd = _assign(env)
+    env.tick()
+    assert env.result(cmd)["status"] == "REJECTED" and "Kurs unbekannt" in env.result(cmd)["result"]["reason"]
+    assert not env.sql("select 1 from trade where account_id = %s", (ACC,))
+
+
+def test_t16_manual_partial_sell_after_assignment_shrinks_quantity_and_stop(ready: Env) -> None:
+    env = ready
+    env.fake.deposit_foreign("BBB", "0.5")
+    env.tick()
+    cmd = _assign(env)
+    env.tick()
+    assert env.result(cmd)["status"] == "DONE"
+    env.fake.manual_sell("BBB", "0.2")
+    env.tick()
+    trade = env.open_trade()
+    assert trade["qty"] == D("0.3")
+    [stop] = env.stops_at_fake()
+    assert stop.vol == D("0.3")
+    _never_short(env)
+    env.tick()
+    assert env.sql("select status from reconciliation order by id desc limit 1")[0]["status"] == "OK"
+    _never_short(env)
+
+
+def test_paper_tick_leaves_assign_command_pending(ready: Env) -> None:
+    env = ready
+    cmd = _assign(env)
+    paper_commands.process_pending(env.store, env.now, PaperRepo(env.conn))
+    assert env.result(cmd)["status"] == "PENDING"
+
+
 def test_t16_unsupported_protection_keeps_autopilot_in_setup(base: Env) -> None:
     env = base
     env.command("LIVE_ACCOUNT_REGISTER", None)

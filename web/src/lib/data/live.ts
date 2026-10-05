@@ -20,7 +20,7 @@ import {
   strategyVersions,
   trades,
 } from "@/db/schema";
-import { EMERGENCY_POLICIES, LIVE_COMMANDS, STEP_UP_COMMANDS, validateMandate, type LiveFacts, type StrategyFacts } from "@/app/live/model";
+import { EMERGENCY_POLICIES, LIVE_COMMANDS, STEP_UP_COMMANDS, validateAssign, validateMandate, type LiveFacts, type StrategyFacts } from "@/app/live/model";
 import { WORKING_ORDER_STATES } from "@/lib/paper";
 
 /**
@@ -197,18 +197,23 @@ export async function issueLiveCommand(user: string, raw: unknown, stepUpAt?: Da
   if (STEP_UP_COMMANDS.includes(input.type) && !stepUpAt) return { ok: false, error: "Dieser Befehl verlangt eine Step-up-Anmeldung." };
   if (input.type === "ORDER_APPROVAL_DECIDE" && (!input.approvalId || !input.decision)) return { ok: false, error: "Freigabeanfrage und Entscheid fehlen." };
   if (input.withdrawAbsentConfirmed && !stepUpAt) return { ok: false, error: "Die Bestätigung «kein Auszahlungsrecht» verlangt eine Step-up-Anmeldung." };
+  if (input.type === "LIVE_ASSIGN_POSITION") return { ok: false, error: "Zuordnen nur über das Formular bei der fremden Position." };
 
   const params: Record<string, unknown> = {};
   if (stepUpAt) params.step_up_at = stepUpAt.toISOString();
   if (input.type === "ORDER_APPROVAL_DECIDE") Object.assign(params, { approval_id: input.approvalId, decision: input.decision });
   if (input.type === "LIVE_ACCOUNT_REGISTER" && input.withdrawAbsentConfirmed) params.withdraw_absent_confirmed = true;
-  const target = input.type === "LIVE_ACCOUNT_REGISTER" ? null : "live-kraken";
+  return insertLiveCommand(user, input.type, input.type === "LIVE_ACCOUNT_REGISTER" ? null : "live-kraken", params);
+}
+
+/** Command plus audit event in one statement; non-register commands only for an existing LIVE account. */
+async function insertLiveCommand(user: string, type: (typeof LIVE_COMMANDS)[number], target: string | null, params: Record<string, unknown>): Promise<IssueResult> {
   const json = JSON.stringify(params);
   const actor = `user:${user}`;
   const res = await db().execute(sql`
     with c as (
       insert into "command" ("type", "target", "params", "issued_by")
-      select ${input.type}::text, ${target}::text, ${json}::jsonb, ${actor}::text
+      select ${type}::text, ${target}::text, ${json}::jsonb, ${actor}::text
       where ${target}::text is null or exists (select 1 from "account" a where a."id" = ${target}::text and a."mode" = 'LIVE')
       returning "id", "type", "target"
     )
@@ -220,6 +225,40 @@ export async function issueLiveCommand(user: string, raw: unknown, stepUpAt?: Da
   const id = rowsOf(res)[0]?.commandId;
   if (typeof id !== "number") return { ok: false, error: "Kein Live-Konto verbunden. Es wurde kein Befehl gespeichert." };
   return { ok: true, id };
+}
+
+const assignInput = z.object({
+  instrumentId: z.string().trim().min(1, "Instrument fehlt.").max(80),
+  strategyVersionId: z.string().trim().min(1, "Strategieversion wählen.").max(80),
+  stop: z.string().trim().max(26),
+});
+
+/**
+ * «Einer Strategie zuordnen» for a foreign position (docs/06, 3.4), after step-up: checks that the version is
+ * APPROVED_LIVE, the instrument has a foreign quantity in the latest reconciliation snapshot and no managed trade.
+ * Writes LIVE_ASSIGN_POSITION with `step_up_at` plus audit in one statement. The engine re-checks everything and adds
+ * the checks that need the live quote (stop below bid, risk within the mandate limits).
+ */
+export async function assignForeignPosition(user: string, raw: unknown, stepUpAt?: Date): Promise<IssueResult> {
+  if (!stepUpAt) return { ok: false, error: "Zuordnen verlangt eine Step-up-Anmeldung." };
+  const parsed = assignInput.safeParse(raw);
+  if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "Ungültige Eingabe." };
+  const input = parsed.data;
+  const approved = (await strategyFacts()).filter((s) => s.approvedLive).map((s) => s.id);
+  const [acc] = await db().select({ id: accounts.id }).from(accounts).where(and(eq(accounts.mode, "LIVE"), eq(accounts.provider, "KRAKEN"))).orderBy(asc(accounts.createdAt)).limit(1);
+  if (!acc) return { ok: false, error: "Kein Live-Konto verbunden. Es wurde kein Befehl gespeichert." };
+  const [recon] = await db().select().from(reconciliations).where(eq(reconciliations.accountId, acc.id)).orderBy(desc(reconciliations.at), desc(reconciliations.id)).limit(1);
+  const snap = recon?.diffs.find((d) => d.kind === "SNAPSHOT");
+  const foreign = (snap?.foreign as Record<string, string> | undefined) ?? {};
+  const managed = (await db().select({ i: trades.instrumentId }).from(trades).where(and(eq(trades.accountId, acc.id), eq(trades.status, "OPEN")))).map((t) => t.i);
+  const error = validateAssign(input, { approved, foreign, managed });
+  if (error) return { ok: false, error };
+  return insertLiveCommand(user, "LIVE_ASSIGN_POSITION", acc.id, {
+    instrument_id: input.instrumentId,
+    strategy_version_id: input.strategyVersionId,
+    stop: input.stop,
+    step_up_at: stepUpAt.toISOString(),
+  });
 }
 
 const mandateInput = z.object({

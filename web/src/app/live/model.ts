@@ -6,10 +6,10 @@
 type Tone = "neutral" | "accent" | "good" | "warning" | "critical";
 
 /** Command types the web app may write for the live account (engine: live/commands.py). */
-export const LIVE_COMMANDS = ["LIVE_ACCOUNT_REGISTER", "LIVE_PAUSE", "LIVE_RESUME", "LIVE_STOP", "LIVE_CLOSE_ALL", "LIVE_EMERGENCY", "ORDER_APPROVAL_DECIDE", "MANDATE_SUSPEND"] as const;
+export const LIVE_COMMANDS = ["LIVE_ACCOUNT_REGISTER", "LIVE_PAUSE", "LIVE_RESUME", "LIVE_STOP", "LIVE_CLOSE_ALL", "LIVE_EMERGENCY", "ORDER_APPROVAL_DECIDE", "MANDATE_SUSPEND", "LIVE_ASSIGN_POSITION"] as const;
 export type LiveCommandType = (typeof LIVE_COMMANDS)[number];
 /** These need a fresh step-up (≤ 5 min); the engine re-checks `params.step_up_at`. */
-export const STEP_UP_COMMANDS: LiveCommandType[] = ["LIVE_CLOSE_ALL", "LIVE_RESUME"];
+export const STEP_UP_COMMANDS: LiveCommandType[] = ["LIVE_CLOSE_ALL", "LIVE_RESUME", "LIVE_ASSIGN_POSITION"];
 
 export const LIVE_COMMAND_LABEL: Record<string, string> = {
   LIVE_ACCOUNT_REGISTER: "Kraken-Konto verbinden",
@@ -20,6 +20,7 @@ export const LIVE_COMMAND_LABEL: Record<string, string> = {
   LIVE_EMERGENCY: "Notfall",
   ORDER_APPROVAL_DECIDE: "Order-Freigabe",
   MANDATE_SUSPEND: "Mandat aussetzen",
+  LIVE_ASSIGN_POSITION: "Fremde Position zuordnen",
 };
 
 export const EMERGENCY_POLICIES = { HOLD_PROTECTED: "halten mit Schutz", CLOSE: "schliessen" } as const;
@@ -133,6 +134,32 @@ export function controlEffects(input: { positions: number; entryOrders: number; 
     LIVE_EMERGENCY: `Keine neuen Einstiege, ${entries}. Notfallpolicy «${EMERGENCY_POLICIES[input.emergency as EmergencyPolicy] ?? "halten mit Schutz"}»: ${input.emergency === "CLOSE" ? `${pos} werden marktnah verkauft.` : `${pos} bleiben mit Stop-Loss bei Kraken; fehlende Stops werden ersetzt.`} Rückkehr nur manuell. ${gap}`,
     LIVE_RESUME: "Der Live-Autopilot wird wieder aktiv: neue Signale freigegebener Versionen können im Rahmen des Mandats zu echten Orders führen. Verpasste Signale werden nicht nachgeholt.",
   };
+}
+
+/**
+ * Effect text of «Einer Strategie zuordnen» for a foreign position (docs/06, 3.4). Always the full foreign quantity:
+ * no partial assignment, so the reconciliation stays unambiguous (holding = managed quantity).
+ */
+export function assignEffect(input: { instrumentId: string; qty: string; strategy: string | null; stop: string | null }) {
+  const who = input.strategy ? `«${input.strategy}»` : "die gewählte Strategieversion";
+  const stop = input.stop ? `${input.stop} USD` : "deinem Stop-Preis";
+  return [
+    `Die ganze fremde Menge von ${input.qty} (${input.instrumentId}) wird ab jetzt von ${who} verwaltet – eine Teilzuordnung gibt es nicht.`,
+    `Echtgeld: Die Live-Funktion setzt im nächsten Durchlauf (innert etwa einer Minute) einen Stop-Loss bei Kraken über die ganze Menge zu ${stop}. Danach betreut sie die Position wie jede andere nach den Exit-Regeln der Strategie: Trailing zieht den Stop nur enger, Zeitlimit oder Regimewechsel können einen marktnahen Verkauf auslösen.`,
+    "Kurslücken, Handelsunterbrüche (Wartung) und fehlende Liquidität können den Verkauf unter dem Stop ausführen oder verhindern – der Stop ist kein garantierter Maximalverlust.",
+    "Die Kostenbasis vor der Zuordnung bleibt unbekannt: Einstand und Ergebnis zählen ab dem Geldkurs bei der Übernahme (Gebühren 0).",
+    "Die Live-Funktion lehnt ab, wenn der Stop nicht unter dem aktuellen Geldkurs liegt oder das Risiko bis zum Stop (Menge × Abstand plus geschätzte Ausstiegskosten) die Grenzen des Mandats überschreitet – dann einen engeren Stop wählen.",
+  ];
+}
+
+/** Validates the assign form (the engine re-checks everything incl. quote, tick size and risk limits). */
+export function validateAssign(input: { instrumentId: string; strategyVersionId: string; stop: string }, ctx: { approved: string[]; foreign: Record<string, string>; managed: string[] }): string | null {
+  if (!ctx.approved.includes(input.strategyVersionId)) return "Nur eine für Live freigegebene Strategieversion (APPROVED_LIVE) wählen.";
+  const qty = ctx.foreign[input.instrumentId];
+  if (!qty || !/^\d+(\.\d+)?$/.test(qty) || /^0+(\.0+)?$/.test(qty)) return "Laut letztem Abgleich gibt es für dieses Instrument keine fremde Menge.";
+  if (ctx.managed.includes(input.instrumentId)) return "Für dieses Instrument gibt es bereits eine verwaltete Position.";
+  if (!/^\d{1,12}(\.\d{1,12})?$/.test(input.stop) || /^0+(\.0+)?$/.test(input.stop)) return "Stop-Preis in USD > 0 eingeben (Punkt als Dezimaltrennzeichen).";
+  return null;
 }
 
 /** Validates the mandate form; returns German error text or null. Budget must be retyped to confirm (docs/02, 3.2). */

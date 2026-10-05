@@ -34,7 +34,7 @@ export function StepUpBar() {
           </>
         ) : (
           <>
-            <strong>Step-up nötig</strong> für Mandat, Live-Freigabe, Schliessen und Fortsetzen (Passkey oder TOTP, gilt 5 Minuten).
+            <strong>Step-up nötig</strong> für Mandat, Live-Freigabe, Schliessen, Fortsetzen und Zuordnen fremder Positionen (Passkey oder TOTP, gilt 5 Minuten).
           </>
         )}
       </span>

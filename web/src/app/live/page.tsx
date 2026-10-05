@@ -9,7 +9,7 @@ import { guard } from "@/lib/data/guard";
 import { loadLiveOverview } from "@/lib/data/live";
 import { ago, dateTime, decimal, price } from "@/lib/format";
 import { rejectionReason } from "@/lib/paper";
-import { LiveApprovalButton, LiveControls, MandateForm, OrderApprovalButtons, RegisterAccount, SuspendMandate } from "./live-controls";
+import { AssignForeignPosition, LiveApprovalButton, LiveControls, MandateForm, OrderApprovalButtons, RegisterAccount, SuspendMandate } from "./live-controls";
 import { canActivate, controlEffects, eligibleStrategies, gatesPassed, LIVE_COMMAND_LABEL, liveState, preconditions } from "./model";
 
 export const dynamic = "force-dynamic";
@@ -156,7 +156,17 @@ export default async function LivePage() {
               )}
 
               <Card title="Positionen" actions={<ModeBadge mode="LIVE" />}>
-                <LivePositions rows={o.positions} snapshot={o.snapshot} />
+                <LivePositions
+                  rows={o.positions}
+                  snapshot={o.snapshot}
+                  foreignAction={(instrumentId, qty) =>
+                    o.positions.some((p) => p.instrumentId === instrumentId) ? (
+                      <p className="text-xs text-ink-2">Für dieses Instrument gibt es eine verwaltete Position – nicht zuordenbar.</p>
+                    ) : (
+                      <AssignForeignPosition instrumentId={instrumentId} qty={qty} strategies={o.strategies.filter((s) => s.approvedLive).map((s) => s.id)} waiting={waiting} />
+                    )
+                  }
+                />
               </Card>
               <Card title="Offene Orders bei Kraken" actions={<ModeBadge mode="LIVE" />}>
                 <LiveOrders rows={o.orders} />

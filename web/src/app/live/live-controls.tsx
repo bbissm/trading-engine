@@ -1,8 +1,8 @@
 "use client";
 
 import { useActionState, useState } from "react";
-import { activateMandateAction, liveApprovalAction, liveCommandAction, type LiveActionState } from "./actions";
-import { EMERGENCY_POLICIES, LIVE_COMMAND_LABEL, type LiveCommandType } from "./model";
+import { activateMandateAction, assignPositionAction, liveApprovalAction, liveCommandAction, type LiveActionState } from "./actions";
+import { assignEffect, EMERGENCY_POLICIES, LIVE_COMMAND_LABEL, type LiveCommandType } from "./model";
 
 function Feedback({ state }: { state: LiveActionState | undefined }) {
   if (!state) return null;
@@ -226,6 +226,69 @@ export function OrderApprovalButtons({ approvalId }: { approvalId: number }) {
       </button>
       <Feedback state={result} />
     </form>
+  );
+}
+
+/**
+ * «Einer Strategie zuordnen» for one foreign position: only APPROVED_LIVE versions, stop price, concrete effect text
+ * (protective stop for the full quantity at Kraken, gap risk, unknown cost basis). Needs a fresh step-up.
+ */
+export function AssignForeignPosition({ instrumentId, qty, strategies, waiting }: { instrumentId: string; qty: string; strategies: string[]; waiting: boolean }) {
+  const [open, setOpen] = useState(false);
+  const [strategy, setStrategy] = useState(strategies[0] ?? "");
+  const [stop, setStop] = useState("");
+  const [result, action, pending] = useActionState(async (prev: LiveActionState | undefined, form: FormData) => {
+    const r = await assignPositionAction(prev, form);
+    if (!r.error) setOpen(false);
+    return r;
+  }, undefined);
+  const effect = assignEffect({ instrumentId, qty, strategy: strategy || null, stop: stop.trim() || null });
+  if (!strategies.length) return <p className="text-xs text-ink-2">Zuordnen erst möglich, wenn eine Strategieversion für Live freigegeben ist (APPROVED_LIVE).</p>;
+  return (
+    <div className="space-y-2">
+      <button type="button" className="btn-ghost disabled:cursor-not-allowed disabled:opacity-45" aria-expanded={open} disabled={waiting || pending} onClick={() => setOpen(!open)}>
+        Einer Strategie zuordnen
+      </button>
+      {open && (
+        <form action={action} className="space-y-3 rounded-lg border border-mode-live bg-surface-2 p-3">
+          <input type="hidden" name="instrumentId" value={instrumentId} />
+          <div className="text-sm font-semibold">
+            {instrumentId} einer Strategie zuordnen – Wirkung <span className="text-xs font-normal">(Echtgeld)</span>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="block text-xs font-medium text-muted">
+              Strategieversion (nur APPROVED_LIVE)
+              <select name="strategyVersionId" value={strategy} onChange={(e) => setStrategy(e.target.value)} className="mt-1 block w-full font-mono text-xs">
+                {strategies.map((id) => (
+                  <option key={id} value={id}>
+                    {id}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="block text-xs font-medium text-muted">
+              Stop-Preis in USD (unter dem aktuellen Geldkurs)
+              <input name="stop" required inputMode="decimal" autoComplete="off" value={stop} onChange={(e) => setStop(e.target.value)} className="mt-1 block w-full tabular" />
+            </label>
+          </div>
+          <ul className="list-disc space-y-1 pl-5 text-sm">
+            {effect.map((line) => (
+              <li key={line}>{line}</li>
+            ))}
+          </ul>
+          <p className="text-xs text-ink-2">Verlangt eine Step-up-Anmeldung (höchstens 5 Minuten alt).</p>
+          <div className="flex flex-wrap items-center gap-2">
+            <button type="submit" disabled={pending} className="btn disabled:opacity-60">
+              {pending ? "Sende …" : `Bestätigen: ganze Menge ${qty} zuordnen`}
+            </button>
+            <button type="button" className="btn-ghost" onClick={() => setOpen(false)} disabled={pending}>
+              Abbrechen
+            </button>
+          </div>
+        </form>
+      )}
+      <Feedback state={result} />
+    </div>
   );
 }
 

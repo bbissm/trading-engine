@@ -3,7 +3,7 @@
 import { refresh } from "next/cache";
 import { hasDb } from "@/db/client";
 import { requireStepUp } from "@/lib/auth/step-up";
-import { activateMandate, decideLiveApproval, issueLiveCommand } from "@/lib/data/live";
+import { activateMandate, assignForeignPosition, decideLiveApproval, issueLiveCommand } from "@/lib/data/live";
 import { userName } from "@/lib/session";
 import { STEP_UP_COMMANDS, type LiveCommandType } from "./model";
 
@@ -41,6 +41,28 @@ export async function liveCommandAction(_prev: LiveActionState | undefined, form
     return { id: r.id, done: "Befehl gesendet – die Live-Funktion quittiert innert etwa einer Minute." };
   } catch (e) {
     return fail(e, "command");
+  }
+}
+
+/**
+ * «Einer Strategie zuordnen» for a foreign position: step-up first (≤ 5 min), then server-side validation; writes
+ * LIVE_ASSIGN_POSITION with `step_up_at` plus audit atomically. The engine re-checks and places the protective stop.
+ */
+export async function assignPositionAction(_prev: LiveActionState | undefined, form: FormData): Promise<LiveActionState> {
+  if (!hasDb()) return { error: "Keine Datenbank verbunden." };
+  const s = await requireStepUp(300);
+  if (!s.ok) return { error: `Step-up nötig: ${s.reason}` };
+  try {
+    const r = await assignForeignPosition(
+      userName(),
+      { instrumentId: String(form.get("instrumentId") ?? ""), strategyVersionId: String(form.get("strategyVersionId") ?? ""), stop: String(form.get("stop") ?? "") },
+      s.at,
+    );
+    if (!r.ok) return { error: r.error };
+    refresh();
+    return { id: r.id, done: "Zuordnung gesendet – die Live-Funktion prüft Kurs und Risikogrenzen und quittiert innert etwa einer Minute." };
+  } catch (e) {
+    return fail(e, "assign");
   }
 }
 

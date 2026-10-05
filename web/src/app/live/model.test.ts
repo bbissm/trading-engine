@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { canActivate, controlEffects, liveState, preconditions, validateMandate, type LiveFacts } from "./model";
+import { assignEffect, canActivate, controlEffects, liveState, preconditions, validateAssign, validateMandate, type LiveFacts } from "./model";
 
 const NOW = Date.UTC(2026, 9, 4, 12, 0, 0);
 const min = (m: number) => new Date(NOW - m * 60_000);
@@ -73,4 +73,23 @@ describe("Bedienung: Wirkung im Dialog", () => {
     expect(controlEffects({ positions: 1, entryOrders: 0, notional: null, estCost: null, emergency: "CLOSE" }).LIVE_EMERGENCY).toMatch(/marktnah verkauft/);
   });
   it("unknown state reads «Nicht eingerichtet»", () => expect(liveState(null).label).toBe("Nicht eingerichtet"));
+});
+
+describe("Fremde Position zuordnen", () => {
+  const ctx = { approved: ["s2@1"], foreign: { "K:ETH/USD": "1.5", "K:BTC/USD": "0.25", "K:SOL/USD": "0.000" }, managed: ["K:BTC/USD"] };
+  it("validates approval, foreign quantity, managed position and stop", () => {
+    expect(validateAssign({ instrumentId: "K:ETH/USD", strategyVersionId: "s2@1", stop: "2500.5" }, ctx)).toBeNull();
+    expect(validateAssign({ instrumentId: "K:ETH/USD", strategyVersionId: "s1@1", stop: "2500" }, ctx)).toMatch(/APPROVED_LIVE/);
+    expect(validateAssign({ instrumentId: "K:SOL/USD", strategyVersionId: "s2@1", stop: "2" }, ctx)).toMatch(/keine fremde Menge/);
+    expect(validateAssign({ instrumentId: "K:BTC/USD", strategyVersionId: "s2@1", stop: "2" }, ctx)).toMatch(/verwaltete Position/);
+    expect(validateAssign({ instrumentId: "K:ETH/USD", strategyVersionId: "s2@1", stop: "0.00" }, ctx)).toMatch(/Stop-Preis/);
+  });
+  it("effect text names full quantity, stop at Kraken, gap risk and unknown cost basis", () => {
+    const text = assignEffect({ instrumentId: "K:ETH/USD", qty: "1.5", strategy: "s2@1", stop: "2500" }).join(" ");
+    expect(text).toMatch(/ganze fremde Menge von 1\.5/);
+    expect(text).toMatch(/Stop-Loss bei Kraken über die ganze Menge zu 2500 USD/);
+    expect(text).toMatch(/Kurslücken/);
+    expect(text).toMatch(/Kostenbasis vor der Zuordnung bleibt unbekannt/);
+    expect(text).not.toMatch(/Gewinn/);
+  });
 });

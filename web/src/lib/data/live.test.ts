@@ -3,7 +3,7 @@ import { eq } from "drizzle-orm";
 import type { Database } from "@/db/client";
 import { accounts, approvals, auditEvents, autopilots, commands, episodes, gateEvaluations, instruments, mandates, reconciliations, strategyVersions, trades } from "@/db/schema";
 import { createTestDb } from "@/test/db";
-import { activateMandate, decideLiveApproval, issueLiveCommand, loadLiveOverview, loadLiveSummary } from "./live";
+import { activateMandate, assignForeignPosition, decideLiveApproval, issueLiveCommand, loadLiveOverview, loadLiveSummary } from "./live";
 import { listPaperPositions } from "./paper";
 
 const BTC = "KRAKEN:BTC/USD";
@@ -111,5 +111,39 @@ describe("Live data", () => {
     expect(r.ok).toBe(true);
     const all = JSON.stringify([await database.select().from(commands), await database.select().from(auditEvents), await database.select().from(accounts)]);
     expect(all).not.toContain(FAKE_SECRET);
+  });
+});
+
+describe("Fremde Position zuordnen", () => {
+  const ETH = "KRAKEN:ETH/USD";
+
+  it("validates step-up, APPROVED_LIVE, foreign quantity, managed position and stop; writes command + audit", async () => {
+    await database.insert(instruments).values({ id: ETH, kind: "CRYPTO_SPOT", venue: "KRAKEN", venueSymbol: "ETHUSD", name: "Ether / US-Dollar", quoteCurrency: "USD", inUniverse: true });
+    await database.insert(approvals).values({ strategyVersionId: S2, proposedBy: "user:test", decision: "APPROVED_LIVE", decidedAt: new Date(), decidedBy: "user:test" });
+    await database.insert(reconciliations).values({
+      accountId: LIVE,
+      at: new Date(Date.now() + 1000),
+      status: "OK",
+      diffs: [{ kind: "SNAPSHOT", severity: "INFO", balances: {}, managed: { [BTC]: "0.5" }, foreign: { [BTC]: "0.25", [ETH]: "1.5" }, system: "online" }],
+    });
+    const ok = { instrumentId: ETH, strategyVersionId: S2, stop: "2500.5" };
+    expect(await assignForeignPosition("test", ok)).toEqual({ ok: false, error: expect.stringMatching(/Step-up/) });
+    expect(await assignForeignPosition("test", { ...ok, strategyVersionId: S1 }, STEP_UP)).toEqual({ ok: false, error: expect.stringMatching(/APPROVED_LIVE/) });
+    expect(await assignForeignPosition("test", { ...ok, instrumentId: "KRAKEN:SOL/USD" }, STEP_UP)).toEqual({ ok: false, error: expect.stringMatching(/keine fremde Menge/) });
+    expect(await assignForeignPosition("test", { ...ok, instrumentId: BTC }, STEP_UP)).toEqual({ ok: false, error: expect.stringMatching(/verwaltete Position/) });
+    for (const stop of ["", "0", "-5", "1,5", "abc", "1e3"]) {
+      expect(await assignForeignPosition("test", { ...ok, stop }, STEP_UP)).toEqual({ ok: false, error: expect.stringMatching(/Stop-Preis/) });
+    }
+    expect((await issueLiveCommand("test", { type: "LIVE_ASSIGN_POSITION" }, STEP_UP)).ok).toBe(false);
+
+    const r = await assignForeignPosition("test", ok, STEP_UP);
+    expect(r.ok).toBe(true);
+    const [cmd] = await database.select().from(commands).where(eq(commands.type, "LIVE_ASSIGN_POSITION"));
+    expect(cmd.target).toBe(LIVE);
+    expect(cmd.status).toBe("PENDING");
+    expect(cmd.params).toEqual({ instrument_id: ETH, strategy_version_id: S2, stop: "2500.5", step_up_at: STEP_UP.toISOString() });
+    const audit = await database.select().from(auditEvents).where(eq(auditEvents.object, `command:${cmd.id}`));
+    expect(audit).toHaveLength(1);
+    expect((await loadLiveOverview()).commands.some((c) => c.id === cmd.id)).toBe(true);
   });
 });
