@@ -5,7 +5,7 @@ was nur du liefern kannst, wo es eingetragen wird und was dadurch freigeschaltet
 
 Variablen werden im Vercel-Dashboard unter *Project → Settings → Environment Variables* (Production) gesetzt,
 als «Sensitive». Danach einmal neu deployen (oder mir sagen – dann setze ich sie per CLI, wenn du mir die Werte gibst).
-Projekte: **web** = `trading-engine`, **worker** = `trading-engine-worker`.
+Projekte: **web** = `trading-engine`, **worker** = `trading-engine-worker`, **live** = `trading-engine-live` (nur für Echtgeld).
 
 ## A. Sofort (5 Minuten, kostenlos)
 
@@ -54,14 +54,14 @@ deshalb gibt es nichts freizugeben. Wenn es so weit ist:
 | # | Was | Wo |
 |---|---|---|
 | E1 | Kraken-Konto verifizieren, bestätigen, dass Spot-Handel für Wohnsitz Schweiz verfügbar ist, tatsächliche Gebührenstufe prüfen, CHF → USD klären | Kraken |
-| E2 | API-Schlüssel **nur** mit: Query Funds, Query Open/Closed Orders, Create & Modify Orders, Cancel/Close Orders, Query Ledger. **Kein Withdraw, kein Deposit.** | `KRAKEN_API_KEY`, `KRAKEN_API_SECRET` im worker (nie im Browser, nie im Chat) |
+| E2 | API-Schlüssel **nur** mit: Query Funds, Query Open/Closed Orders, Create & Modify Orders, Cancel/Close Orders, Query Ledger. **Kein Withdraw, kein Deposit.** | `KRAKEN_API_KEY`, `KRAKEN_API_SECRET` **nur im live-Projekt** (nie im Browser, nie im Chat, nie im worker) |
 | E3 | Im Live-Assistenten (`/live`): Konto registrieren (prüft, dass kein Auszahlungsrecht besteht), Mandat mit Budget anlegen, Strategieversion für Live freigeben – jeweils mit Step-up | App |
-| E4 | `LIVE_TRADING_ENABLED=true` in worker und web setzen | Vercel |
+| E4 | `LIVE_TRADING_ENABLED=true` im live-Projekt und im web-Projekt setzen | Vercel |
 | E5 | Vor dem ersten echten Auftrag: Vertragstests mit Krakens `validate`-Modus und zwei manuelle Kleinstorders nach Protokoll – nur mit deiner ausdrücklichen Zustimmung | gemeinsam |
 
 Hinweise dazu: Eine IP-Allowlist für den Schlüssel ist mit Vercel nicht möglich (wechselnde Ausgangsadressen).
-Für saubere Trennung sollte die Live-Funktion in ein eigenes Vercel-Projekt ziehen, damit nur sie die
-Kraken-Schlüssel sieht; das richte ich ein, bevor Schlüssel hinterlegt werden.
+Die Live-Funktion läuft bereits in einem eigenen Vercel-Projekt mit eigener Datenbankrolle (docs/11, E-8); nur dort
+gehören die Kraken-Schlüssel hin.
 
 ## F. Für Echtgeld mit Aktien (Interactive Brokers) – später
 
