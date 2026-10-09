@@ -38,7 +38,8 @@ cd ../web && pnpm dev                                          # .env.local gem�
 ## 4. Engine (Vercel-Projekt `trading-engine-worker`)
 
 Die Engine läuft als eigenes Vercel-Projekt mit Root Directory `engine` (Entscheid E-1 in docs/11).
-`engine/vercel.json` definiert einen Cron, der jede Minute `/api/tick` aufruft.
+`engine/vercel.json` definiert einen Cron, der alle 4 Stunden (1 Minute nach jedem 4h-Kerzenschluss) `/api/tick` aufruft.
+Die Crons für `/api/lab` und `/api/live` sind vorerst aus, um das Neon-Datenvolumen zu schonen (Free Plan, 5 GB/Monat).
 
 | Variable (Production) | Zweck |
 |---|---|

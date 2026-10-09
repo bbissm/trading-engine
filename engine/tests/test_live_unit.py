@@ -330,4 +330,5 @@ def test_t3_live_api_returns_disabled_without_flag(monkeypatch: pytest.MonkeyPat
 def test_vercel_config_has_separate_live_function() -> None:
     cfg = json.loads((API.parent / "vercel.json").read_text(encoding="utf-8"))
     assert cfg["functions"]["api/live.py"]["maxDuration"] == 60
-    assert {"path": "/api/live", "schedule": "* * * * *"} in cfg["crons"]
+    # Live-Cron vorerst aus (Neon-Datenvolumen); api/live.py bleibt manuell bzw. per Cron wieder aktivierbar
+    assert all(c["path"] != "/api/live" for c in cfg["crons"])

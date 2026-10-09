@@ -7,8 +7,6 @@
     "api/live.py": { "maxDuration": 60 }
   },
   "crons": [
-    { "path": "/api/tick", "schedule": "* * * * *" },
-    { "path": "/api/lab", "schedule": "*/5 * * * *" },
-    { "path": "/api/live", "schedule": "* * * * *" }
+    { "path": "/api/tick", "schedule": "1 */4 * * *" }
   ]
 }

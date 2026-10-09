@@ -1,4 +1,4 @@
-"""Vercel-Cron-Einstieg des Live-Autopiloten (vercel.json: jede Minute, maxDuration 60).
+"""Vercel-Cron-Einstieg des Live-Autopiloten (Cron vorerst aus, maxDuration 60).
 
 Ohne `LIVE_TRADING_ENABLED == "true"` kehrt der Aufruf sofort mit {"live": "disabled"} zurück – kein
 Datenbankzugriff, kein Anbieteraufruf. Geschützt über CRON_SECRET wie api/tick.py. Antworten und Logs enthalten

@@ -1,4 +1,4 @@
-"""Vercel-Cron-Einstieg: ein zustandsloser Arbeitsschritt der Engine pro Aufruf (vercel.json: jede Minute).
+"""Vercel-Cron-Einstieg: ein zustandsloser Arbeitsschritt der Engine pro Aufruf (vercel.json: alle 4 Stunden, 1 Minute nach Kerzenschluss).
 
 Geschützt über CRON_SECRET – Vercel sendet bei Cron-Aufrufen "Authorization: Bearer $CRON_SECRET".
 Kein Orderweg, keine Handels-Zugangsdaten.

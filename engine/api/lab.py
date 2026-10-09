@@ -1,4 +1,4 @@
-"""Vercel-Cron-Einstieg des Lernlabors (vercel.json: alle 5 Minuten, maxDuration 300 s).
+"""Vercel-Cron-Einstieg des Lernlabors (Cron vorerst aus, maxDuration 300 s).
 
 Ein zustandsloser Schritt: ein wenig Forschungsdaten nachladen (Bitstamp, höflich), dann laufende Experimente
 innerhalb des Zeitbudgets fortsetzen (Fortschritt in `experiment.progress`). Geschützt über CRON_SECRET wie
