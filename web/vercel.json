@@ -9,7 +9,7 @@
   "crons": [
     {
       "path": "/api/cron/watchdog",
-      "schedule": "*/5 * * * *"
+      "schedule": "20 * * * *"
     }
   ]
 }

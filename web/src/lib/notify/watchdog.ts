@@ -3,11 +3,12 @@ import { and, eq, ne, sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import { alertDeliveries, alerts, heartbeats, settings } from "@/db/schema";
 import { ago, dateTime } from "@/lib/format";
+import { HEARTBEAT_MAX_AGE_MS } from "@/lib/health";
 import { pushoverAcknowledged, pushoverConfigured, sendPushover, sendTelegram, telegramConfigured, type Fetch, type SendResult } from "./senders";
 
 /**
- * Vercel watchdog (second, independent monitoring path, docs/06 4.3): runs every 5 minutes in the web project.
- * If the engine heartbeat is older than 5 minutes it alerts directly via Telegram and Pushover — at most every
+ * Vercel watchdog (second, independent monitoring path, docs/06 4.3): runs hourly in the web project (web/vercel.json).
+ * If the engine heartbeat is older than HEARTBEAT_MAX_AGE_MS (4h tick + margin) it alerts directly via Telegram and Pushover — at most every
  * 30 minutes (state in `setting` key `watchdog.last_alert`) — and keeps one alert row open. A Pushover confirmation
  * on the device stops the repetition for this outage. A fresh heartbeat resolves the row and resets the state.
  *
@@ -17,7 +18,7 @@ import { pushoverAcknowledged, pushoverConfigured, sendPushover, sendTelegram, t
 
 export const WATCHDOG_KEY = "watchdog.last_alert";
 export const WATCHDOG_DEDUP = "watchdog:engine-silent";
-export const ENGINE_STALE_MS = 5 * 60_000;
+export const ENGINE_STALE_MS = HEARTBEAT_MAX_AGE_MS;
 export const RESEND_MS = 30 * 60_000;
 const PUSHOVER_EXPIRE_S = 1800;
 

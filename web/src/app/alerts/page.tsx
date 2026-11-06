@@ -128,7 +128,7 @@ function Body({ data }: { data: AlertsData }) {
       <div className="grid gap-4 lg:grid-cols-3">
         <Card title="Kanäle" subtitle="Technische Prüfung durch die Engine alle 15 Minuten" className="lg:col-span-2">
           <ChannelTable rows={data.channels} enabled={data.enabled} now={data.now} />
-          <p className="mt-2 text-xs text-ink-2">SMS ist in V1 nicht umgesetzt. Ein zweiter, unabhängiger Weg (Vercel-Watchdog) meldet direkt, wenn die Engine sich länger als 5 Minuten nicht meldet.</p>
+          <p className="mt-2 text-xs text-ink-2">SMS ist in V1 nicht umgesetzt. Ein zweiter, unabhängiger Weg (Vercel-Watchdog) meldet direkt, wenn die Engine sich nach einem 4-Stunden-Takt nicht meldet (länger als 4 h 20 min).</p>
         </Card>
         <Card title="Einstellungen" subtitle="Ruhezeit (Europe/Zurich): Informationen und Signale werden zurückgehalten, Warnungen stumm zugestellt.">
           <div className="space-y-5">

@@ -3,7 +3,7 @@ import { eq } from "drizzle-orm";
 import type { Database } from "@/db/client";
 import { alertDeliveries, alerts, heartbeats, settings } from "@/db/schema";
 import { createTestDb } from "@/test/db";
-import { runWatchdog, WATCHDOG_DEDUP, WATCHDOG_KEY } from "./watchdog";
+import { ENGINE_STALE_MS, runWatchdog, WATCHDOG_DEDUP, WATCHDOG_KEY } from "./watchdog";
 
 const T = Date.UTC(2026, 9, 4, 12, 0, 0);
 const MIN = 60_000;
@@ -54,7 +54,7 @@ describe("watchdog", () => {
 
   it("alerts via Telegram and Pushover at most every 30 minutes and resolves on recovery", async () => {
     const f = new FakeFetch();
-    await beat(T - 6 * MIN);
+    await beat(T - ENGINE_STALE_MS - MIN);
     expect(await runWatchdog(T, ENV, f.fn)).toMatchObject({ stale: true, sent: true });
     expect(f.count("sendMessage")).toBe(1);
     expect(f.count("messages.json")).toBe(1);
@@ -85,7 +85,7 @@ describe("watchdog", () => {
 
   it("stops repeating once confirmed on the Pushover device", async () => {
     const f = new FakeFetch();
-    await beat(T - 10 * MIN);
+    await beat(T - ENGINE_STALE_MS - 10 * MIN);
     await runWatchdog(T, ENV, f.fn);
     f.acknowledged = true;
     expect(await runWatchdog(T + 5 * MIN, ENV, f.fn)).toMatchObject({ reason: "Pushover-Quittung erhalten" });

@@ -56,7 +56,7 @@ beforeAll(async () => {
   ]);
   await database.insert(heartbeats).values([
     { service: "guardian", lastSeen: at(1), schemaVersion: SCHEMA_VERSION },
-    { service: "marketdata", lastSeen: at(10), schemaVersion: SCHEMA_VERSION + 1 },
+    { service: "marketdata", lastSeen: at(5 * 60), schemaVersion: SCHEMA_VERSION + 1 },
   ]);
   await database.insert(feedStatus).values([
     { feed: "kraken", instrumentId: BTC, timeframe: "4h", lastCandleClose: at(60), lastOkAt: at(1), status: "OK" },

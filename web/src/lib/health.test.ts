@@ -8,7 +8,7 @@ const hb = (service: string, ageMs: number, schemaVersion = SCHEMA_VERSION): Hea
 const feed = (status: string, detail: string | null = null): FeedRow => ({ feed: "kraken", instrumentId: "KRAKEN:BTC/USD", timeframe: "4h", lastCandleClose: new Date(NOW - 3_600_000), lastOkAt: null, status, detail, updatedAt: new Date(NOW) });
 
 describe("heartbeat staleness", () => {
-  it("is OK below three minutes and stale from three minutes on", () => {
+  it("is OK below the 4h tick margin and stale from it on", () => {
     expect(heartbeatState(hb("guardian", 10_000), NOW)).toMatchObject({ ok: true, schemaOk: true, ageMs: 10_000 });
     expect(heartbeatState(hb("guardian", HEARTBEAT_MAX_AGE_MS - 1), NOW).ok).toBe(true);
     expect(heartbeatState(hb("guardian", HEARTBEAT_MAX_AGE_MS), NOW).ok).toBe(false);
@@ -28,7 +28,7 @@ describe("attention items", () => {
   });
 
   it("reports stale heartbeats, schema mismatches and feeds that are not OK — critical first", () => {
-    const items = attentionItems({ heartbeats: [hb("guardian", 5000, 99), hb("marketdata", 600_000)], feeds: [feed("STALE"), feed("ERROR", "HTTP 503")], dbSchemaVersion: null }, NOW);
+    const items = attentionItems({ heartbeats: [hb("guardian", 5000, 99), hb("marketdata", HEARTBEAT_MAX_AGE_MS + 600_000)], feeds: [feed("STALE"), feed("ERROR", "HTTP 503")], dbSchemaVersion: null }, NOW);
     expect(items.map((i) => [i.id, i.severity])).toEqual([
       ["schema:db", "critical"],
       ["heartbeat:marketdata", "critical"],
@@ -36,7 +36,7 @@ describe("attention items", () => {
       ["schema:guardian", "warning"],
       ["feed:kraken:KRAKEN:BTC/USD:4h", "warning"],
     ]);
-    expect(items[1].detail).toContain("vor 10 min");
+    expect(items[1].detail).toContain("vor 4 h");
     expect(items[2].detail).toBe("HTTP 503");
   });
 });

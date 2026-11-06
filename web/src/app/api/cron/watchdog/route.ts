@@ -6,7 +6,7 @@ import { runWatchdog } from "@/lib/notify/watchdog";
 export const dynamic = "force-dynamic";
 
 /**
- * Vercel cron (web/vercel.json, every 5 minutes): independent watchdog for the engine heartbeat.
+ * Vercel cron (web/vercel.json, hourly): independent watchdog for the engine heartbeat.
  * Excluded from the login guard in src/proxy.ts; authenticates itself with CRON_SECRET.
  */
 export async function GET(req: Request) {

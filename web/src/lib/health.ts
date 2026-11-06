@@ -1,8 +1,8 @@
 import { SCHEMA_VERSION } from "@/db/schema";
 import { ago } from "@/lib/format";
 
-/** A heartbeat older than this counts as stale (engine services write one every few seconds). */
-export const HEARTBEAT_MAX_AGE_MS = 3 * 60_000;
+/** A heartbeat older than this counts as stale: the engine runs 1 minute after each 4h candle close (engine/vercel.json), plus 20 minutes margin. */
+export const HEARTBEAT_MAX_AGE_MS = (4 * 60 + 20) * 60_000;
 
 export interface HeartbeatRow {
   service: string;

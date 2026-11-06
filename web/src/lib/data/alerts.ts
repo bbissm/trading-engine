@@ -7,6 +7,7 @@ import { missing, WEB_ENV } from "@/lib/notify/env";
 import { enabledChannelsOf, HHMM, MODE_PREFIX, quietHoursOf, type QuietHours } from "@/lib/notify/labels";
 import { autopilotState } from "@/lib/paper";
 import { ago, dateTime } from "@/lib/format";
+import { HEARTBEAT_MAX_AGE_MS } from "@/lib/health";
 
 /**
  * Alerts («Meldungen»), their deliveries, channel status and notification settings. The web app only reads here
@@ -176,7 +177,7 @@ export async function telegramStatusText(now = Date.now()): Promise<string> {
   ]);
   const lines = [`[SYSTEM] Status ${dateTime(new Date(now))}`];
   const beat = hb[0];
-  lines.push(beat ? `Engine: letztes Lebenszeichen ${ago(beat.lastSeen, now)}${now - beat.lastSeen.getTime() > 5 * 60_000 ? " – überfällig" : ""}` : "Engine: noch kein Lebenszeichen");
+  lines.push(beat ? `Engine: letztes Lebenszeichen ${ago(beat.lastSeen, now)}${now - beat.lastSeen.getTime() > HEARTBEAT_MAX_AGE_MS ? " – überfällig" : ""}` : "Engine: noch kein Lebenszeichen");
   if (paper.length) for (const p of paper) lines.push(`[PAPER] ${p.name} (${p.id}): ${autopilotState(p.state).label}`);
   else lines.push("Keine Paper-Konten.");
   lines.push(`Offene kritische Meldungen: ${critical.length}`);
