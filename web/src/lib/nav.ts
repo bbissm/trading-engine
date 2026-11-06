@@ -24,6 +24,7 @@ export const MORE: NavItem[] = [
   { href: "/scanner", label: "Scanner", icon: "search" },
   { href: "/paper", label: "Paper-Lab", icon: "flask" },
   { href: "/strategies", label: "Strategien & Lernlabor", short: "Strategien", icon: "target" },
+  { href: "/news", label: "Nachrichten & Briefing", short: "Nachrichten", icon: "news" },
   { href: "/journal", label: "Journal", icon: "book" },
   { href: "/alerts", label: "Meldungen", icon: "bolt" },
   { href: "/operations", label: "Verbindungen & Betrieb", short: "Betrieb", icon: "plug" },

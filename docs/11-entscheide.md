@@ -151,3 +151,11 @@ dauerhaften lokalen Speicher. Stattdessen: Fällt die Datenbank aus, entstehen k
 gespeicherte Absicht keine Order); Kraken selbst ist das Journal der Ausführungen, und der Abgleich holt Fills
 und Bestände beim nächsten erfolgreichen Durchlauf nach (TradesHistory, offene/geschlossene Orders). Die
 Schutz-Stops liegen in dieser Zeit bei Kraken. Getestet ist der Fall «Datenbank fällt nach dem Senden aus».
+
+## E-10 · Nachrichten über Claude Code statt API, nur vorwärts bewertet (6.11.2026)
+
+Meldungen (RSS: Krypto-Medien, US-Notenbank, SEC) ordnet Claude über die lokale Claude Code Bridge ein (Claude-Plan,
+keine API-Kosten), wie bei SiteEngine und CommerceEngine. CryptoPanic entfällt (kostenpflichtig). Die Einordnung wird
+mit Zeitstempel gespeichert und erst später gegen den Kursverlauf ausgewertet; ein Rücktest mit alten Meldungen
+wäre verzerrt, weil das Modell den späteren Verlauf kennen kann. Die Engine nutzt die Nachrichten noch nicht für
+Entscheide; das folgt erst als eigene, versionierte Strategie mit eigenem Paper-Konto.

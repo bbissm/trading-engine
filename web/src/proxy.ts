@@ -12,7 +12,7 @@ import { getAuth } from "@/lib/auth/server";
  * - Sitzung ohne TOTP (erster Login) → nur /setup.
  * - `/api/ops/*` zusätzlich mit `Authorization: Bearer <TE_API_TOKEN>` (Skripte). Basic Auth gibt es nicht mehr.
  * - Ausgenommen (siehe matcher und isSelfAuthenticatedPath): /login, /api/auth/* (Better Auth), /api/telegram,
- *   /api/cron/*, Icons und Manifest (iOS lädt sie ohne Sitzung).
+ *   /api/cron/*, /api/llm-bridge/* (Claude Code Bridge, eigenes Token), Icons und Manifest (iOS lädt sie ohne Sitzung).
  * - Ohne TE_PASSWORD lokal offen; auf Vercel ohne vollständige Konfiguration 503.
  */
 export async function proxy(req: NextRequest) {
@@ -69,5 +69,5 @@ export async function proxy(req: NextRequest) {
 }
 
 export const config = {
-  matcher: [{ source: "/((?!_next/|favicon.ico|icon|apple-icon|pwa-icon/|manifest.webmanifest|login|api/auth/|api/telegram|api/cron/).*)" }],
+  matcher: [{ source: "/((?!_next/|favicon.ico|icon|apple-icon|pwa-icon/|manifest.webmanifest|login|api/auth/|api/telegram|api/cron/|api/llm-bridge/).*)" }],
 };

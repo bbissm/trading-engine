@@ -4,8 +4,8 @@ import { activeSection, activeTab, backTarget, depth, DESKTOP_NAV, MORE, section
 describe("navigation", () => {
   it("has the five tabs and the sections behind Mehr", () => {
     expect(TABS.map((t) => t.href)).toEqual(["/", "/signals", "/autopilot", "/portfolio", "/more"]);
-    expect(MORE.map((t) => t.href)).toEqual(["/scanner", "/paper", "/strategies", "/journal", "/alerts", "/operations"]);
-    expect(DESKTOP_NAV).toHaveLength(10);
+    expect(MORE.map((t) => t.href)).toEqual(["/scanner", "/paper", "/strategies", "/news", "/journal", "/alerts", "/operations"]);
+    expect(DESKTOP_NAV).toHaveLength(11);
     expect(DESKTOP_NAV.some((t) => t.href === "/more")).toBe(false);
   });
 

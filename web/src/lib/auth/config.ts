@@ -29,7 +29,7 @@ export const SESSION_UPDATE_AGE_SECONDS = 86_400;
 
 /** Pfade, die der Proxy nie schützt: Better Auth selbst, Telegram-Webhook und Crons (authentisieren sich selbst). */
 export function isSelfAuthenticatedPath(pathname: string): boolean {
-  return pathname.startsWith("/api/auth/") || pathname === "/api/telegram" || pathname.startsWith("/api/telegram/") || pathname.startsWith("/api/cron/");
+  return pathname.startsWith("/api/auth/") || pathname === "/api/telegram" || pathname.startsWith("/api/telegram/") || pathname.startsWith("/api/cron/") || pathname.startsWith("/api/llm-bridge/");
 }
 
 /** Nur interne Pfade als Ziel nach der Anmeldung (kein Open Redirect). */

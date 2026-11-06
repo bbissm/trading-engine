@@ -21,7 +21,7 @@ describe("auth mode", () => {
 
 describe("paths", () => {
   it("leaves self-authenticating routes to themselves", () => {
-    for (const p of ["/api/auth/sign-in/email", "/api/telegram", "/api/cron/watchdog"]) expect(isSelfAuthenticatedPath(p)).toBe(true);
+    for (const p of ["/api/auth/sign-in/email", "/api/telegram", "/api/cron/watchdog", "/api/llm-bridge/next"]) expect(isSelfAuthenticatedPath(p)).toBe(true);
     for (const p of ["/api/ops/database", "/api/step-up", "/", "/api/authx", "/api/telegramx"]) expect(isSelfAuthenticatedPath(p)).toBe(false);
   });
 

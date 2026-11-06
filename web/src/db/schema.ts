@@ -7,7 +7,7 @@ import { boolean, bigserial, index, integer, jsonb, numeric, pgTable, primaryKey
  * bei jeder Migration SCHEMA_VERSION erhöhen (hier und in engine/src/tradingengine/schema_version.py).
  * Preise/Mengen sind `numeric` – nie Float. Zeitstempel immer UTC.
  */
-export const SCHEMA_VERSION = 4;
+export const SCHEMA_VERSION = 5;
 
 const price = (name: string) => numeric(name, { precision: 28, scale: 10 });
 const ts = (name: string) => timestamp(name, { withTimezone: true });
@@ -625,4 +625,95 @@ export const executionMetrics = pgTable("execution_metric", {
   fillToProtectMs: integer("fill_to_protect_ms"),
   slippageBps: numeric("slippage_bps", { precision: 14, scale: 4 }),
   at: ts("at").notNull().defaultNow(),
+});
+
+// ───────── Nachrichten (Claude über die lokale Claude Code Bridge) ─────────
+
+/**
+ * Anfrage an die lokale Claude Code Bridge (01-IT-Projects/claude-bridge, Ziel "trading"): Die App legt sie hier ab,
+ * die Bridge holt sie über /api/llm-bridge/next, beantwortet sie mit `claude -p` (Claude-Plan, keine API-Kosten) und
+ * liefert über /api/llm-bridge/result. `purpose` sagt, wer die Antwort verarbeitet (news.assess, news.briefing).
+ */
+export const llmBridgeRequests = pgTable(
+  "llm_bridge_request",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    /** Hash des Inhalts: dieselbe Arbeit wird nie doppelt angefragt. */
+    key: text("key").notNull(),
+    purpose: text("purpose").notNull(),
+    /** pending | claimed | done | failed | cancelled */
+    status: text("status").notNull().default("pending"),
+    request: jsonb("request").$type<Record<string, unknown>>().notNull(),
+    response: jsonb("response").$type<Record<string, unknown>>(),
+    error: text("error"),
+    /** limit | auth | refusal | error */
+    errorCode: text("error_code"),
+    claimedAt: ts("claimed_at"),
+    /** Antwort von der App verarbeitet (Bewertungen bzw. Briefing gespeichert). */
+    processedAt: ts("processed_at"),
+    createdAt: ts("created_at").notNull().defaultNow(),
+    updatedAt: ts("updated_at").notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("llm_bridge_request_key_uq").on(t.key), index("llm_bridge_request_status_idx").on(t.status, t.createdAt)],
+);
+
+/** Meldung aus einem RSS-Feed. `fetched_at` = wann sie bei uns vorlag (kein Zukunftswissen in späteren Auswertungen). */
+export const newsItems = pgTable(
+  "news_item",
+  {
+    /** sha256 der URL */
+    id: text("id").primaryKey(),
+    source: text("source").notNull(),
+    url: text("url").notNull(),
+    title: text("title").notNull(),
+    summary: text("summary"),
+    publishedAt: ts("published_at"),
+    fetchedAt: ts("fetched_at").notNull().defaultNow(),
+    /** gesetzt, sobald Claude die Meldung eingeordnet hat */
+    assessedAt: ts("assessed_at"),
+  },
+  (t) => [index("news_item_fetched_idx").on(t.fetchedAt), index("news_item_unassessed_idx").on(t.assessedAt, t.fetchedAt)],
+);
+
+/** Claudes Einordnung einer Meldung. Append-only; `created_at` liegt immer vor dem, was danach am Markt passiert. */
+export const newsAssessments = pgTable(
+  "news_assessment",
+  {
+    itemId: text("item_id")
+      .primaryKey()
+      .references(() => newsItems.id),
+    /** betroffene Coins als Basis-Kürzel, z. B. ["BTC","QNT"]; leer bei reinen Markt-/Makro-Meldungen */
+    coins: jsonb("coins").$type<string[]>().notNull(),
+    /** COIN | MARKET | MACRO | NONE (ohne Marktbezug) */
+    scope: text("scope").notNull(),
+    /** z. B. ADOPTION, INVESTMENT, LISTING, ETF, REGULATION, POLITICS, MACRO, HACK, UNLOCK, TECH, LEGAL, OTHER */
+    category: text("category").notNull(),
+    /** −2 (stark negativ) … +2 (stark positiv) */
+    direction: integer("direction").notNull(),
+    /** OFFICIAL | REPORTED | RUMOR */
+    credibility: text("credibility").notNull(),
+    /** DAYS | WEEKS | MONTHS */
+    horizon: text("horizon").notNull(),
+    /** 0–100: wie stark die Meldung den Kurs bewegen könnte (keine Wahrscheinlichkeit) */
+    relevance: integer("relevance").notNull(),
+    rationale: text("rationale").notNull(),
+    model: text("model").notNull(),
+    createdAt: ts("created_at").notNull().defaultNow(),
+  },
+  (t) => [index("news_assessment_created_idx").on(t.createdAt)],
+);
+
+/** Tägliches Markt-Briefing (ein Eintrag je Tag, UTC-Datum). */
+export const marketBriefings = pgTable("market_briefing", {
+  /** YYYY-MM-DD (UTC) */
+  day: text("day").primaryKey(),
+  headline: text("headline").notNull(),
+  summary: text("summary").notNull(),
+  /** je Coin: { coin, direction, note } */
+  coins: jsonb("coins").$type<{ coin: string; direction: number; note: string }[]>().notNull(),
+  /** Termine und Risiken der nächsten Tage */
+  watch: jsonb("watch").$type<string[]>().notNull(),
+  itemCount: integer("item_count").notNull(),
+  model: text("model").notNull(),
+  createdAt: ts("created_at").notNull().defaultNow(),
 });

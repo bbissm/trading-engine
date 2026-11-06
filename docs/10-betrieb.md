@@ -58,6 +58,19 @@ Lokale Geheimnisse liegen in `.env.secrets` und `.env` im Repo-Ordner (beide git
 Noch offen aus Etappe 0: externer Heartbeat-Dienst (`HEALTHCHECK_URL` ist leer), zweiter unabhängiger
 Watchdog (E0-6), Passkey-Anmeldung (E0-4), Eintrag im Control Center (E0-8).
 
+## 4a. Nachrichten und Briefing (Claude Code Bridge)
+
+- Cron `/api/cron/news` im Web-Projekt (01:30, 05:30, 09:30, 13:30, 17:30, 21:30 UTC): RSS-Feeds aus
+  `web/src/lib/news/feeds.ts` holen, neue Meldungen in `news_item`, Bündel von 25 an Claude (`news_assessment`),
+  ab 05:00 UTC einmal am Tag das Briefing (`market_briefing`). Anzeige unter **Mehr → Nachrichten & Briefing**.
+- Claude läuft über die lokale Bridge (`01-IT-Projects/claude-bridge`, Ziel `trading`) mit dem Claude-Plan, nicht
+  über die API. Ist der PC aus, bleiben die Anfragen liegen (nach 2 Tagen verfallen sie, Meldungen älter als 3 Tage
+  werden nicht mehr eingeordnet). Die Engine handelt davon unabhängig weiter.
+- Variablen im Web-Projekt: `LLM_BRIDGE_TOKEN` (gleicher Wert wie `token` des Ziels `trading` in
+  `claude-bridge/.env.local`) und `LLM_BRIDGE_NOTIFY_URL` (dasselbe ntfy-Topic wie bei den anderen Apps).
+- Einordnungen sind Daten mit Zeitstempel, keine Prognose. Für Rücktests unbrauchbar (Claude kennt die Kurse bis zu
+  seinem Wissensstand); bewertet wird nur vorwärts.
+
 ## 5. Was im Betrieb zu sehen ist
 
 - **Übersicht:** Heartbeat der Engine (grün, wenn jünger als 3 min), Feed-Status je Instrument/Zeitebene.
