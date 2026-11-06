@@ -31,7 +31,7 @@ from .adapters.pg_store import PgStore
 from .calendar_us import UsCalendar
 from .core.candles import timeframe_delta
 from .core.strategies import ACTIVE, StrategyDef
-from .notify import deliver, health
+from .notify import deliver, health, signal_alerts
 from .ports import Instrument, MarketData, Store
 from .schema_version import SCHEMA_VERSION
 from .services import commands, fx, guardian, marketdata, paper, signals, stocks, strategy_registry
@@ -121,6 +121,7 @@ def after_cycle(conn: Any, now: datetime) -> dict[str, object]:
     out: dict[str, object] = {}
     steps: list[tuple[str, Callable[[], object]]] = [
         ("guardian", lambda: guardian.run_guardian(conn, now)),
+        ("signal_alerts", lambda: signal_alerts.raise_signal_alerts(conn, now)),
         ("fx", lambda: fx.refresh_fx(conn, now)),
         ("channels", lambda: health.check_channels(conn, now)),
         ("deliver", lambda: deliver.deliver_pending(conn, now)),
