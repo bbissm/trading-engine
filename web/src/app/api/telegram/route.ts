@@ -21,7 +21,10 @@ export async function POST(req: Request) {
   } catch {
     return NextResponse.json({ ok: true, ignored: "invalid json" });
   }
-  if (!fromAllowedChat(update)) return NextResponse.json({ ok: true, ignored: "chat" });
+  if (!fromAllowedChat(update)) {
+    console.warn("[telegram] ignoriert: fremder Chat");
+    return NextResponse.json({ ok: true, ignored: "chat" });
+  }
   if (!hasDb()) return NextResponse.json({ ok: true, ignored: "no database" });
 
   const parsed = parseUpdate(update);
@@ -32,8 +35,9 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: true, command: r.ok ? r.commandId : null });
     }
     if (parsed.kind === "status") {
-      await sendTelegram(await telegramStatusText(), { silent: true });
-      return NextResponse.json({ ok: true });
+      const sent = await sendTelegram(await telegramStatusText(), { silent: true });
+      if (!sent.ok) console.error("[telegram] Status nicht gesendet:", sent.error);
+      return NextResponse.json({ ok: sent.ok });
     }
     if (parsed.kind === "pause") {
       const r = await issueTelegramCommand({ action: "pause", account_id: parsed.accountId });
@@ -41,9 +45,10 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: true, command: r.ok ? r.commandId : null });
     }
     if (parsed.callbackId) await answerCallbackQuery(parsed.callbackId, "Nicht unterstützt");
+    else await sendTelegram("Befehle: /status (Zustand der Engine und der Testkonten), /pause <konto> (Einstiege eines Testkontos pausieren).", { silent: true });
     return NextResponse.json({ ok: true, ignored: "unsupported" });
   } catch (e) {
-    console.error("[telegram]", e instanceof Error ? e.name : "Fehler");
+    console.error("[telegram]", e instanceof Error ? `${e.name}: ${e.message}`.slice(0, 300) : "Fehler");
     return NextResponse.json({ ok: true, error: "internal" });
   }
 }
