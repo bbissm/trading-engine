@@ -159,3 +159,18 @@ keine API-Kosten), wie bei SiteEngine und CommerceEngine. CryptoPanic entfällt 
 mit Zeitstempel gespeichert und erst später gegen den Kursverlauf ausgewertet; ein Rücktest mit alten Meldungen
 wäre verzerrt, weil das Modell den späteren Verlauf kennen kann. Die Engine nutzt die Nachrichten noch nicht für
 Entscheide; das folgt erst als eigene, versionierte Strategie mit eigenem Paper-Konto.
+
+## E-11 · Grösseres Crypto-Universum und Grenze für gleichläufige Coins (6.11.2026)
+
+Die fünf Coins des Oktobers (BTC, ETH, SOL, XRP, LINK) bewegen sich fast gleich: am 7.10. wurden alle fünf Paper-
+Positionen in derselben Kerze ausgestoppt – fünf Trades, eine Wette. Darum:
+
+- **Universum** auf 27 Kraken-USD-Paare erweitert (24h-Volumen ab etwa 1 Mio. USD, mindestens 200 Tageskerzen,
+  ohne Stablecoins, Gold-Token und Meme-Neulinge; `engine/src/tradingengine/universe.py`, `EXTENSION_2026_11`).
+  Abrufe bei Kraken mit 1 s Abstand; `api/tick.py` darf dafür bis 300 s laufen.
+- **Gleichlauf** (`core/correlation.py`): Korrelation der täglichen Log-Renditen über die letzten 60 gemeinsamen
+  Tage (mindestens 40); ab 0.75 gehören zwei Coins in dieselbe Gruppe (verkettet). Coins ohne genug Geschichte
+  zählen vorsichtig zur Gruppe von BTC. Dazu Beta zu BTC (wie stark ein Coin im Mittel mit BTC mitgeht).
+- **Risikopolicy `risk@2`**: höchstens 2 Positionen (inkl. reservierter Einstiege) und 1 % Risiko je Gruppe.
+  Gilt im Paper-Autopiloten; Backtest und Live prüfen ohne Gruppen (unverändert). Episoden mit `risk@1` behalten
+  ihre Regeln; die neue Grenze gilt ab einer neuen Episode.

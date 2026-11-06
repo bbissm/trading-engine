@@ -119,6 +119,7 @@ class RiskInputs:
     losses_by_strategy: dict[str, int]
     entries_allowed: bool
     fresh: dict[str, bool]  # Datenstatus je Instrument
+    groups: dict[str, str] | None = None  # gleichläufige Gruppe je Instrument (core/correlation.py); None = ohne Gruppenprüfung
 
 
 @dataclass(slots=True)
@@ -374,7 +375,7 @@ def submit_entries(
         ctx = RiskContext(
             equity=equity, day_start_equity=risk.day_start_equity, week_start_equity=risk.week_start_equity, peak_equity=risk.peak_equity,
             entries_today=entries_today, consecutive_losses=risk.losses_by_strategy.get(sig.strategy_version_id, 0),
-            entries_allowed=risk.entries_allowed, data_fresh=risk.fresh.get(sig.instrument_id, False),
+            entries_allowed=risk.entries_allowed, data_fresh=risk.fresh.get(sig.instrument_id, False), groups=risk.groups,
         )
         verdict = check_entry(request, state.account, ctx, policy)
         values = {**verdict.values, "menge": f"{sizing.qty}", "geplantes_risiko": f"{sizing.planned_risk:.2f}", "kostenmodell": model.version}

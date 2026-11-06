@@ -2,7 +2,7 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "regions": ["fra1"],
   "functions": {
-    "api/tick.py": { "maxDuration": 120 },
+    "api/tick.py": { "maxDuration": 300 },
     "api/lab.py": { "maxDuration": 300 },
     "api/live.py": { "maxDuration": 60 }
   },

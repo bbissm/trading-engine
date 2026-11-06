@@ -55,7 +55,11 @@ def policy_to_json(policy: RiskPolicy) -> dict[str, Any]:
 
 def policy_from_json(d: dict[str, Any]) -> RiskPolicy:
     defaults = asdict(RiskPolicy())
-    return RiskPolicy(**{k: (Decimal(str(d[k])) if isinstance(defaults[k], Decimal) else d[k]) for k in defaults if k in d})  # type: ignore[arg-type]
+    stored = dict(d)
+    if "max_group_positions" not in stored:
+        # Episoden vor risk@2 behalten ihre Regeln: keine Gruppengrenze rückwirkend
+        stored.update(max_group_positions=1_000_000, max_group_risk="1")
+    return RiskPolicy(**{k: (Decimal(str(stored[k])) if isinstance(defaults[k], Decimal) else stored[k]) for k in defaults if k in stored})  # type: ignore[arg-type]
 
 
 class PaperRepo:
@@ -234,6 +238,18 @@ class PaperRepo:
             (instrument_id, timeframe, until, limit),
         ).fetchall()
         return [_candle(r) for r in rows]
+
+    def daily_closes(self, since: datetime, until: datetime) -> dict[str, list[tuple[datetime, Decimal]]]:
+        """Tagesschlüsse des Universums (für Gleichlauf und Beta, core/correlation.py)."""
+        rows = self.c.execute(
+            "select c.instrument_id, c.close_time, c.close from candle c join instrument i on i.id = c.instrument_id "
+            "where i.in_universe and c.timeframe = %s and c.close_time > %s and c.close_time <= %s order by c.instrument_id, c.close_time",
+            ("1d", since, until),
+        ).fetchall()
+        out: dict[str, list[tuple[datetime, Decimal]]] = {}
+        for r in rows:
+            out.setdefault(r["instrument_id"], []).append((r["close_time"], r["close"]))
+        return out
 
     def last_prices(self, timeframe: str, until: datetime) -> dict[str, Decimal]:
         rows = self.c.execute(

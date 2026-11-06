@@ -6,6 +6,7 @@ und wird verworfen. Tiefere Historie kommt aus dem Download-Archiv (kraken_archi
 
 from __future__ import annotations
 
+import time
 from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
@@ -16,6 +17,8 @@ from ..core.candles import TIMEFRAME_MINUTES, Candle, timeframe_delta
 from ..ports import Instrument
 
 BASE_URL = "https://api.kraken.com/0/public"
+# Abstand zwischen zwei Abrufen: Kraken drosselt öffentliche Abfragen je IP (rund 1 pro Sekunde im Mittel).
+MIN_INTERVAL_S = 1.0
 
 
 class KrakenError(RuntimeError):
@@ -56,8 +59,17 @@ def parse_ohlc(payload: dict[str, Any], instrument: Instrument, timeframe: str, 
 class KrakenPublic:
     source = "kraken-rest"
 
-    def __init__(self, client: httpx.Client | None = None) -> None:
+    def __init__(self, client: httpx.Client | None = None, min_interval_s: float | None = None) -> None:
         self._client = client or httpx.Client(timeout=15.0, headers={"User-Agent": "tradingengine/0.1"})
+        # mit eingeschleustem Client (Tests) ohne Wartezeit
+        self._min_interval = (0.0 if client is not None else MIN_INTERVAL_S) if min_interval_s is None else min_interval_s
+        self._last = 0.0
+
+    def _pace(self) -> None:
+        wait = self._last + self._min_interval - time.monotonic()
+        if wait > 0:
+            time.sleep(wait)
+        self._last = time.monotonic()
 
     def fetch_pair_specs(self, venue_symbols: list[str]) -> dict[str, tuple[Decimal, Decimal, Decimal]]:
         """(Tick-Grösse, Mindestmenge, Mindestwert) je Paar aus AssetPairs, Schlüssel = `altname` (z. B. "XBTUSD")."""
@@ -69,6 +81,7 @@ class KrakenPublic:
         return {v["altname"]: (Decimal(v["tick_size"]), Decimal(v["ordermin"]), Decimal(v["costmin"])) for v in payload["result"].values()}
 
     def fetch_closed_candles(self, instrument: Instrument, timeframe: str, now: datetime) -> list[Candle]:
+        self._pace()
         resp = self._client.get(
             f"{BASE_URL}/OHLC", params={"pair": instrument.venue_symbol, "interval": TIMEFRAME_MINUTES[timeframe]}
         )

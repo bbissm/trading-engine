@@ -20,6 +20,7 @@ from ..adapters.pg_paper import PaperRepo, policy_from_json
 from ..calendar_us import UsCalendar, default_calendar
 from ..core import indicators as ind
 from ..core.candles import Candle, floor_time
+from ..core.correlation import exposure
 from ..core.costs import KRAKEN_SPOT_TIER1, CostModel
 from ..core.costs_stocks import IBKR_FIXED_US
 from ..core.paper import Management, PaperState, RiskInputs, close_all, pause_entries, step_candle, submit_entries
@@ -35,6 +36,7 @@ log = logging.getLogger(__name__)
 EXEC_TIMEFRAME = "4h"
 REGIME_TIMEFRAME = "1d"
 LOOKBACK = 600
+CORRELATION_DAYS = 120
 ZURICH = ZoneInfo("Europe/Zurich")
 COST_MODELS: dict[str, CostModel] = {KRAKEN_SPOT_TIER1.version: KRAKEN_SPOT_TIER1, IBKR_FIXED_US.version: IBKR_FIXED_US}
 ASSET_CLASSES = {"CRYPTO": (KRAKEN_SPOT_TIER1.version, "sim@1"), "US_STOCKS": (IBKR_FIXED_US.version, "sim-stocks@1")}
@@ -82,7 +84,14 @@ def _advance(repo: PaperRepo, state: PaperState, model: CostModel, ticks: dict[s
     return steps
 
 
-def _risk_inputs(repo: PaperRepo, state: PaperState, row: dict[str, Any], policy: RiskPolicy, feed_ok: dict[str, bool], now: datetime) -> RiskInputs:
+def _groups(repo: PaperRepo, leaders: dict[str, str | None], now: datetime) -> dict[str, str]:
+    """Gleichläufige Gruppen aus den Tagesschlüssen der letzten Monate (nur Crypto)."""
+    closes = {i: c for i, c in repo.daily_closes(now - timedelta(days=CORRELATION_DAYS), now).items() if not is_stock_id(i)}
+    return exposure(closes, leaders, now).group_of
+
+
+def _risk_inputs(repo: PaperRepo, state: PaperState, row: dict[str, Any], policy: RiskPolicy, feed_ok: dict[str, bool], now: datetime,
+                 groups: dict[str, str] | None = None) -> RiskInputs:
     day_start, week_start = _day_and_week_start(now)
     start_cash: Decimal = row["start_cash"]
     peak = repo.peak_equity(state.episode_id)
@@ -106,6 +115,7 @@ def _risk_inputs(repo: PaperRepo, state: PaperState, row: dict[str, Any], policy
         losses_by_strategy=losses,
         entries_allowed=True,
         fresh=feed_ok,
+        groups=groups,
     )
 
 
@@ -114,7 +124,8 @@ def run_accounts(
 ) -> dict[str, Any]:
     """Ein Tick für alle Paper-Konten. `feed_status`: Status je "instrument|timeframe"."""
     summary: dict[str, Any] = {}
-    specs, ticks, _ = repo.specs()
+    specs, ticks, leaders = repo.specs()
+    groups: dict[str, str] | None = None
     for row in repo.accounts():
         account_id, ap_state = row["id"], row["state"]
         if ap_state not in MANAGED_STATES:
@@ -138,7 +149,9 @@ def run_accounts(
                 prices = repo.last_prices(EXEC_TIMEFRAME, now)
                 feed_ok = {i: feed_status.get(f"{i}|{EXEC_TIMEFRAME}") == "OK" for i in ticks}
                 before = len(state.outcomes)
-                submit_entries(state, [s for s, _ in pending], now, prices, _risk_inputs(repo, state, row, policy, feed_ok, now), policy, model,
+                if groups is None:
+                    groups = _groups(repo, leaders, now)
+                submit_entries(state, [s for s, _ in pending], now, prices, _risk_inputs(repo, state, row, policy, feed_ok, now, groups), policy, model,
                                specs, _strategies(row["strategy_version_ids"], strategies))
                 submitted = sum(1 for o in state.outcomes[before:] if o.status == "ORDERED")
         repo.save_state(state, now)

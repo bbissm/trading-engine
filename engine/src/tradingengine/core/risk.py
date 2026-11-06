@@ -7,6 +7,7 @@ risikosenkende Orders werden hier nie blockiert (siehe check_exit).
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from decimal import Decimal
 
@@ -17,7 +18,7 @@ from .account import Account
 class RiskPolicy:
     """Startwerte gemäss docs/06, Abschnitt 2 (Annahme A-RISK). Anteile als Bruch (0.005 = 0.5 %)."""
 
-    version: str = "risk@1"
+    version: str = "risk@2"
     risk_per_trade: Decimal = Decimal("0.005")
     max_open_risk: Decimal = Decimal("0.025")
     max_positions: int = 6
@@ -32,6 +33,9 @@ class RiskPolicy:
     loss_streak_cooldown_hours: int = 24
     max_spread_bps: Decimal = Decimal(15)
     max_quote_age_s: int = 10
+    # risk@2 (docs/11, E-11): Coins, die sich gemeinsam bewegen, zählen als eine Wette
+    max_group_positions: int = 2
+    max_group_risk: Decimal = Decimal("0.01")
 
 
 @dataclass(frozen=True, slots=True)
@@ -61,6 +65,8 @@ class RiskContext:
     unknown_orders: int = 0
     spread_bps: Decimal | None = None  # None = nicht verfügbar (z. B. Backtest auf Kerzen)
     require_spread: bool = False
+    # Gruppe gleichläufiger Instrumente je Instrument (core/correlation.py); None = keine Gruppenprüfung (Backtest, Live)
+    groups: Mapping[str, str] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -141,7 +147,27 @@ def check_entry(req: EntryRequest, account: Account, ctx: RiskContext, policy: R
         values["offenes_risiko_inkl_neu"] = f"{total_risk:.2f}"
         if total_risk > eq * policy.max_open_risk:
             reasons.append(f"Gesamtrisiko {total_risk:.2f} > {eq * policy.max_open_risk:.2f}")
+        if ctx.groups is not None:
+            reasons.extend(_group_limits(req, account, ctx.groups, eq, policy, values))
     return RiskDecision(allowed=not reasons, reasons=reasons, values=values)
+
+
+def _group_limits(req: EntryRequest, account: Account, groups: Mapping[str, str], eq: Decimal, policy: RiskPolicy, values: dict[str, str]) -> list[str]:
+    """Positionen und Risiko je Gruppe gleichläufiger Instrumente; ein Instrument ohne Gruppe bildet seine eigene."""
+    key = groups.get(req.instrument_id, req.instrument_id)
+    members = sorted({i for i, k in groups.items() if k == key} | {req.instrument_id})
+    held = [i for i, p in account.positions.items() if p.qty > 0 and groups.get(i, i) == key]
+    reserved = [r for r in account.reservations.values() if groups.get(r.instrument_id, r.instrument_id) == key]
+    risk = sum((account.positions[i].planned_risk for i in held), Decimal(0)) + sum((r.risk for r in reserved), Decimal(0))
+    label = "/".join(m.split(":", 1)[-1].split("/", 1)[0] for m in members[:6]) + (f" +{len(members) - 6}" if len(members) > 6 else "")
+    values["gruppe"] = label
+    values["gruppen_risiko_inkl_neu"] = f"{risk + req.planned_risk:.2f}"
+    out: list[str] = []
+    if len(held) + len(reserved) >= policy.max_group_positions:
+        out.append(f"Gleichläufige Gruppe {label}: schon {len(held) + len(reserved)} Position(en), höchstens {policy.max_group_positions}")
+    if risk + req.planned_risk > eq * policy.max_group_risk * Decimal("1.0001"):
+        out.append(f"Gruppenrisiko {label} {risk + req.planned_risk:.2f} > {eq * policy.max_group_risk:.2f}")
+    return out
 
 
 def check_exit(instrument_id: str, qty: Decimal, account: Account, working_sell_qty: Decimal = Decimal(0)) -> RiskDecision:
