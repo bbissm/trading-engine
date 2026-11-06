@@ -19,7 +19,7 @@ export interface CommandActionState {
  */
 export async function paperCommandAction(_prev: CommandActionState | undefined, form: FormData): Promise<CommandActionState> {
   if (!hasDb()) return { error: "Keine Datenbank verbunden." };
-  const raw = { type: form.get("type"), accountId: form.get("accountId"), name: form.get("name"), startCash: form.get("startCash") };
+  const raw = { type: form.get("type"), accountId: form.get("accountId"), name: form.get("name"), startCash: form.get("startCash"), profile: form.get("profile") ?? undefined };
   try {
     const r = await issuePaperCommand(userName(), raw);
     if (!r.ok) return { error: r.error };

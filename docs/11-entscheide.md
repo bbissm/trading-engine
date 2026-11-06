@@ -174,3 +174,23 @@ Positionen in derselben Kerze ausgestoppt – fünf Trades, eine Wette. Darum:
 - **Risikopolicy `risk@2`**: höchstens 2 Positionen (inkl. reservierter Einstiege) und 1 % Risiko je Gruppe.
   Gilt im Paper-Autopiloten; Backtest und Live prüfen ohne Gruppen (unverändert). Episoden mit `risk@1` behalten
   ihre Regeln; die neue Grenze gilt ab einer neuen Episode.
+
+## E-12 · Invest-Topf und Vergleich mit Halten (6.11.2026)
+
+Neben dem Trading (Stunden bis Tage) ein Invest-Topf für Wochen bis Monate, als eigene Paper-Konten mit Profil
+(`services/paper.py` `PROFILES`; im Web beim Anlegen wählbar):
+
+| Profil | Strategien | Risikopolicy |
+|---|---|---|
+| `INVEST_RULES` | `i1-core-trend@1` (BTC/ETH über SMA200, je 25 %) + `i2-satellite-strength@1` (wöchentlich: Aufwärtstrend, 4 und 12 Wochen stärker als BTC, Volumen ≥ 1.2× des Vorquartals, je 10 %) | `risk-invest@1` |
+| `INVEST_NEWS` | `i1-core-trend@1` + `i3-satellite-news@1` (4 Wochen stärker als BTC, Nachrichten-Rückenwind ≥ 1.0 über 14 Tage, kein starker Gegenwind, je 10 %) | `risk-invest@1` |
+| `HOLD` | `h1-hold@1` (BTC und ETH je 45 % kaufen und halten) | `risk-hold@1` |
+
+- Gewichtung statt Risikobudget (`StrategyDef.target_weight`); das Risikobudget der Policy bleibt Obergrenze.
+- Weite, nachgezogene Stopps (Kern 8/10 × Tages-ATR, Satelliten 6/8 × Tages-ATR), Ausstieg im Abwärtstrend;
+  Satelliten höchstens 12 Wochen. Kein Umschichten nach Rangliste (der Exit-Plan kennt keine Rangfolge).
+- Nachrichten (`core/news.py`): Summe aus Richtung × Relevanz × Glaubwürdigkeit (offiziell 1.0, berichtet 0.7,
+  Gerücht 0) der Coin-Meldungen; es zählt nur, was vor dem Kerzenschluss eingeordnet war. Kein Rücktest möglich
+  (das Modell kennt den späteren Verlauf), Bewertung nur vorwärts im Vergleich der drei Konten.
+- Invest-Strategien laufen nur auf Tageskerzen und nicht im Lernlabor. Kaufsignale kommen höchstens einmal pro
+  Woche je Coin aufs Handy; «Halten» meldet nie.

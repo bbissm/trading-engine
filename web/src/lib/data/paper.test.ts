@@ -221,8 +221,12 @@ describe("paper commands", () => {
     const rows = await listPaperCommands({ limit: 2 });
     expect(rows.map((c) => [c.type, c.target, c.params])).toEqual([
       ["PAPER_RESET", A, { start_cash: "25000" }],
-      ["PAPER_CREATE", null, { name: "Mein Konto", start_cash: "10000.50" }],
+      ["PAPER_CREATE", null, { name: "Mein Konto", start_cash: "10000.50", profile: "TRADING" }],
     ]);
+    const invest = await issuePaperCommand("admin", { type: "PAPER_CREATE", name: "Invest", startCash: "10000", profile: "INVEST_NEWS" });
+    expect(invest.ok).toBe(true);
+    expect((await listPaperCommands({ limit: 1 }))[0].params).toEqual({ name: "Invest", start_cash: "10000", profile: "INVEST_NEWS" });
+    expect(await issuePaperCommand("admin", { type: "PAPER_CREATE", name: "X", startCash: "10", profile: "LIVE" })).toEqual({ ok: false, error: "Unbekanntes Profil." });
   });
 
   it("rejects invalid input, unknown accounts and non-PAPER accounts without writing anything", async () => {

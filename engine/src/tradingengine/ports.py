@@ -8,6 +8,7 @@ from decimal import Decimal
 from typing import Any, Protocol
 
 from .core.candles import Candle
+from .core.news import NewsPoint
 from .core.signals import FeatureSnapshot, Signal, StrategyVersion
 
 
@@ -60,6 +61,10 @@ class Store(Protocol):
     def latest_snapshot_close(self, instrument_id: str, timeframe: str, regime_rule_version: str) -> datetime | None: ...
     def feed_statuses(self, feed: str) -> dict[str, str]:
         """Zuletzt gespeicherter Status je "instrument|timeframe"."""
+        ...
+
+    def news_points(self, asset: str, since: datetime, until: datetime) -> list[NewsPoint]:
+        """Claudes Einordnungen zu einem Coin (Kürzel wie in den Meldungen), gespeichert in (since, until]."""
         ...
 
     def latest_signal_counts(self) -> dict[str, tuple[datetime, int]]:

@@ -364,7 +364,11 @@ def submit_entries(
         fee_rate = model.maker_bps / BPS
         free = state.account.free_cash - equity * policy.cash_reserve
         max_notional = min(equity * policy.max_instrument_share, free / (1 + fee_rate))
-        sizing = size_position(equity * policy.risk_per_trade * Decimal(str(strategy.risk_factor)), max_notional, sig.entry, sig.stop, model, spec)
+        budget = equity * policy.risk_per_trade * Decimal(str(strategy.risk_factor))
+        if strategy.target_weight is not None and sig.entry > 0:
+            # Invest: Anteil am Eigenkapital; das Risikobudget der Policy bleibt die Obergrenze
+            budget = min(budget, equity * Decimal(str(strategy.target_weight)) * (sig.entry - sig.stop) / sig.entry)
+        sizing = size_position(budget, max_notional, sig.entry, sig.stop, model, spec)
         if not sizing.ok:
             blocked([sizing.reason or "Positionsgrösse nicht bestimmbar"])
             continue

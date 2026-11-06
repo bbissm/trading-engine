@@ -10,6 +10,7 @@ from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
 from ..core.candles import Candle
+from ..core.news import NewsPoint
 from ..core.signals import FeatureSnapshot, Signal, StrategyVersion
 from ..ports import Command, Instrument
 
@@ -150,6 +151,14 @@ class PgStore:
     def feed_statuses(self, feed: str) -> dict[str, str]:
         rows = self._c().execute("select instrument_id, timeframe, status from feed_status where feed = %s", (feed,)).fetchall()
         return {f"{r['instrument_id']}|{r['timeframe']}": r["status"] for r in rows}
+
+    def news_points(self, asset: str, since: datetime, until: datetime) -> list[NewsPoint]:
+        rows = self._c().execute(
+            "select created_at, direction, relevance, credibility, scope from news_assessment "
+            "where coins ? %s and created_at > %s and created_at <= %s order by created_at",
+            (asset, since, until),
+        ).fetchall()
+        return [NewsPoint(r["created_at"], int(r["direction"]), int(r["relevance"]), r["credibility"], r["scope"]) for r in rows]
 
     def latest_signal_counts(self) -> dict[str, tuple[datetime, int]]:
         rows = self._c().execute(

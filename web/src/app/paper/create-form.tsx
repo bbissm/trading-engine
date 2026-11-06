@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState } from "react";
+import { PAPER_PROFILES } from "@/lib/paper";
 import { paperCommandAction } from "./actions";
 
 /** "Virtuelles Konto anlegen": writes a PAPER_CREATE command; the engine creates the account within about a minute. */
@@ -17,6 +18,16 @@ export function CreateAccountForm() {
         <label className="block text-xs font-medium text-muted">
           Startkapital in USD (virtuell)
           <input name="startCash" required defaultValue="10000" inputMode="decimal" className="mt-1 block w-full tabular" autoComplete="off" />
+        </label>
+        <label className="block text-xs font-medium text-muted sm:col-span-2">
+          Profil
+          <select name="profile" defaultValue="TRADING" className="mt-1 block w-full">
+            {Object.entries(PAPER_PROFILES).map(([k, label]) => (
+              <option key={k} value={k}>
+                {label}
+              </option>
+            ))}
+          </select>
         </label>
       </div>
       <div className="flex flex-wrap items-center gap-3">

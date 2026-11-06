@@ -2,20 +2,29 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from decimal import Decimal
 from typing import Protocol
 
 from ..candles import Candle
 from ..exit_plan import ExitPlan
+from ..news import NewsPoint
 from ..regime import RegimePoint
 from ..signals import Decision, StrategyVersion
-from . import s1_trend_pullback, s2_volume_breakout, s3_mean_reversion
+from . import invest, s1_trend_pullback, s2_volume_breakout, s3_mean_reversion
 
 
 class DecideFn(Protocol):
     def __call__(
         self, candles: list[Candle], own_regimes: list[RegimePoint], leader_regimes: list[RegimePoint], *, tick: Decimal | None = None
+    ) -> list[Decision]: ...
+
+
+class NewsDecideFn(Protocol):
+    def __call__(
+        self, candles: list[Candle], own_regimes: list[RegimePoint], leader_regimes: list[RegimePoint], news: Sequence[NewsPoint], *,
+        tick: Decimal | None = None,
     ) -> list[Decision]: ...
 
 
@@ -29,6 +38,14 @@ class StrategyDef:
     decide: DecideFn
     exit_plan: ExitPlanFn
     risk_factor: float = 1.0
+    # Invest-Topf (docs/11, E-12)
+    timeframes: frozenset[str] | None = None  # None = alle Signal-Zeitebenen
+    target_weight: float | None = None  # Anteil am Eigenkapital statt Risikobudget (durch die Risikopolicy begrenzt)
+    decide_news: NewsDecideFn | None = None  # bekommt zusätzlich die Nachrichten des Coins
+    notify: bool = True  # Kaufsignal aufs Handy
+
+    def applies(self, timeframe: str) -> bool:
+        return self.timeframes is None or timeframe in self.timeframes
 
 
 # Reihenfolge = dokumentierte Strategiepriorität (docs/01, 3.8)
@@ -36,6 +53,22 @@ ACTIVE: list[StrategyDef] = [
     StrategyDef(s1_trend_pullback.VERSION, s1_trend_pullback.decide, s1_trend_pullback.exit_plan),
     StrategyDef(s2_volume_breakout.VERSION, s2_volume_breakout.decide, s2_volume_breakout.exit_plan),
     StrategyDef(s3_mean_reversion.VERSION, s3_mean_reversion.decide, s3_mean_reversion.exit_plan, s3_mean_reversion.PARAMS.risk_factor),
+]
+
+
+DAILY = frozenset({"1d"})
+
+# Invest-Topf und Vergleichsmassstab: eigene Paper-Konten (Profile in services/paper.py), nicht im Lernlabor
+INVEST: list[StrategyDef] = [
+    StrategyDef(invest.CORE_VERSION, lambda c, o, lr, *, tick=None: invest.core_decide(c, o, lr, tick=tick), invest.core_exit_plan,
+                timeframes=DAILY, target_weight=invest.CORE_PARAMS.weight),
+    StrategyDef(invest.SAT_VERSION, lambda c, o, lr, *, tick=None: invest.satellite_decide(c, o, lr, tick=tick), invest.satellite_exit_plan,
+                timeframes=DAILY, target_weight=invest.SAT_PARAMS.weight),
+    StrategyDef(invest.NEWS_VERSION, lambda c, o, lr, *, tick=None: invest.news_satellite_decide(c, o, lr, [], tick=tick), invest.satellite_exit_plan,
+                timeframes=DAILY, target_weight=invest.SAT_PARAMS.weight,
+                decide_news=lambda c, o, lr, news, *, tick=None: invest.news_satellite_decide(c, o, lr, news, tick=tick)),
+    StrategyDef(invest.HOLD_VERSION, lambda c, o, lr, *, tick=None: invest.hold_decide(c, o, lr, tick=tick), invest.hold_exit_plan,
+                timeframes=DAILY, target_weight=invest.HOLD_PARAMS.weight, notify=False),
 ]
 
 

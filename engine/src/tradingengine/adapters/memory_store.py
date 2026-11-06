@@ -6,6 +6,7 @@ from datetime import datetime
 from typing import Any
 
 from ..core.candles import Candle
+from ..core.news import NewsPoint
 from ..core.signals import FeatureSnapshot, Signal, StrategyVersion
 from ..ports import Command, Instrument
 
@@ -21,6 +22,7 @@ class MemoryStore:
         self.signals: dict[tuple[str, str, str, datetime], Signal] = {}
         self.heartbeats: dict[str, dict[str, Any]] = {}
         self.commands: list[Command] = []
+        self.news: list[tuple[str, NewsPoint]] = []
         self.command_results: dict[int, dict[str, Any]] = {}
         self.audits: list[dict[str, Any]] = []
 
@@ -74,6 +76,9 @@ class MemoryStore:
 
     def feed_statuses(self, feed: str) -> dict[str, str]:
         return {f"{i}|{tf}": v["status"] for (f, i, tf), v in self.feed.items() if f == feed}
+
+    def news_points(self, asset: str, since: datetime, until: datetime) -> list[NewsPoint]:
+        return [p for a, p in self.news if a == asset and since < p.at <= until]
 
     def latest_signal_counts(self) -> dict[str, tuple[datetime, int]]:
         out: dict[str, tuple[datetime, int]] = {}

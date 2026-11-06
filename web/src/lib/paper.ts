@@ -4,6 +4,15 @@ import type { AttentionItem } from "@/lib/health";
 type Tone = "neutral" | "accent" | "good" | "warning" | "critical";
 
 /** The only command types the web app ever writes for paper accounts (engine: services/paper.py). */
+/** Kontoprofile der Engine (services/paper.py PROFILES): Strategien und Risikopolicy beim Anlegen. */
+export const PAPER_PROFILES = {
+  TRADING: "Trading (S1–S3, 4h und Tag, eng)",
+  INVEST_RULES: "Invest nach Regeln (Kern BTC/ETH + Satelliten stärker als BTC)",
+  INVEST_NEWS: "Invest mit Nachrichten (Kern + Satelliten mit Claude-Nachrichten)",
+  HOLD: "Halten BTC/ETH (Vergleichsmassstab)",
+} as const;
+export type PaperProfile = keyof typeof PAPER_PROFILES;
+
 export const PAPER_COMMANDS = ["PAPER_CREATE", "PAPER_START", "PAPER_PAUSE", "PAPER_STOP", "PAPER_CLOSE_ALL", "PAPER_RESET"] as const;
 export type PaperCommandType = (typeof PAPER_COMMANDS)[number];
 export type AccountCommandType = Exclude<PaperCommandType, "PAPER_CREATE">;

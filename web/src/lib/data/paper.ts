@@ -4,7 +4,7 @@ import { z } from "zod";
 import { db } from "@/db/client";
 import { accounts, autopilots, commands, episodes, equitySnapshots, fills, instruments, orders, reservations, signalOutcomes, trades } from "@/db/schema";
 import { parseStartCash } from "@/lib/amount";
-import { PAPER_COMMANDS, WORKING_ORDER_STATES } from "@/lib/paper";
+import { PAPER_COMMANDS, PAPER_PROFILES, type PaperProfile, WORKING_ORDER_STATES } from "@/lib/paper";
 
 /**
  * Paper accounts (simulated trading with virtual capital). Everything here is filtered to `account.mode = 'PAPER'`;
@@ -387,7 +387,12 @@ const accountId = z.string({ error: "Konto fehlt." }).min(1, { error: "Konto feh
 
 /** Exactly the PAPER_* commands the engine understands — nothing else can be written through this module. */
 export const paperCommandInput = z.discriminatedUnion("type", [
-  z.object({ type: z.literal("PAPER_CREATE"), name: z.string({ error: "Name fehlt." }).trim().min(1, { error: "Name fehlt." }).max(60, { error: "Name: höchstens 60 Zeichen." }), startCash }),
+  z.object({
+    type: z.literal("PAPER_CREATE"),
+    name: z.string({ error: "Name fehlt." }).trim().min(1, { error: "Name fehlt." }).max(60, { error: "Name: höchstens 60 Zeichen." }),
+    startCash,
+    profile: z.enum(Object.keys(PAPER_PROFILES) as [PaperProfile, ...PaperProfile[]], { error: "Unbekanntes Profil." }).optional(),
+  }),
   z.object({ type: z.enum(["PAPER_START", "PAPER_PAUSE", "PAPER_STOP", "PAPER_CLOSE_ALL"]), accountId }),
   z.object({ type: z.literal("PAPER_RESET"), accountId, startCash }),
 ]);
@@ -408,7 +413,7 @@ export async function issuePaperCommand(user: string, raw: unknown): Promise<Iss
   const input = parsed.data;
   const actor = `user:${user}`;
   const target = input.type === "PAPER_CREATE" ? null : input.accountId;
-  const params = input.type === "PAPER_CREATE" ? { name: input.name, start_cash: input.startCash } : input.type === "PAPER_RESET" ? { start_cash: input.startCash } : {};
+  const params = input.type === "PAPER_CREATE" ? { name: input.name, start_cash: input.startCash, profile: input.profile ?? "TRADING" } : input.type === "PAPER_RESET" ? { start_cash: input.startCash } : {};
   const json = JSON.stringify(params);
 
   const res = await db().execute(sql`

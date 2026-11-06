@@ -46,13 +46,17 @@ SYNC_INTERVAL_S = 60.0
 HEARTBEAT_INTERVAL_S = 30.0
 
 
-def open_keys(store: Store, now: datetime, strategies: int = len(ACTIVE)) -> set[str]:
+DEFAULT_STRATEGY_COUNT = len(ACTIVE)
+
+
+def open_keys(store: Store, now: datetime, strategies: int | dict[str, int] = DEFAULT_STRATEGY_COUNT) -> set[str]:
     """Zeitebenen, deren letzte Kerze noch gültig ist und der Entscheidungen fehlen (aus der Datenbank
     abgeleitet – der Ablauf braucht keinen Zustand im Arbeitsspeicher)."""
     out: set[str] = set()
     for key, (last_close, count) in store.latest_signal_counts().items():
         timeframe = key.rsplit("|", 1)[1]
-        if count < strategies and now < last_close + timeframe_delta(timeframe):
+        expected = strategies if isinstance(strategies, int) else strategies.get(timeframe, 0)
+        if count < expected and now < last_close + timeframe_delta(timeframe):
             out.add(key)
     return out
 
@@ -69,8 +73,9 @@ def cycle(
     sync = marketdata.sync_once(store, market, SIGNAL_TIMEFRAMES, now, instruments=crypto)
     stock_sync, cal = stocks.sync_stocks(store, alpaca, now)
     feeds = {**sync.status, **stock_sync.status}
-    crypto_pending = {k for k in open_keys(store, now, len(active)) | sync.changed if not is_stock_id(k.rsplit("|", 1)[0])}
-    stock_pending = stocks.stock_open_keys(store, now, cal, len(active)) | stock_sync.changed
+    expected = {tf: sum(1 for s in active if s.applies(tf)) for tf in SIGNAL_TIMEFRAMES}
+    crypto_pending = {k for k in open_keys(store, now, expected) | sync.changed if not is_stock_id(k.rsplit("|", 1)[0])}
+    stock_pending = stocks.stock_open_keys(store, now, cal, expected["1d"]) | stock_sync.changed
     created, still = signals.run_once(store, SIGNAL_TIMEFRAMES, feeds, crypto_pending, market.source, now, strategies=active)
     if stock_pending and alpaca is not None:
         created_s, still_s = signals.run_once(

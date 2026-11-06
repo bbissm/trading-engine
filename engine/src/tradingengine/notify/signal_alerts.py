@@ -11,15 +11,23 @@ from datetime import datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
+from ..core.strategies import INVEST
 from .alerts import Conn, raise_alert
 
 KIND = "SIGNAL_BUY"
 MAX_AGE = timedelta(hours=12)
+# Invest-Kaufsignale wiederholen sich täglich, solange die Bedingung gilt: höchstens einmal pro Woche je Coin melden
+INVEST_REPEAT = timedelta(days=7)
+QUIET = [s.version.id for s in INVEST if not s.notify]  # Vergleichsmassstab «Halten»: nie melden
+INVEST_IDS = [s.version.id for s in INVEST]
 
 STRATEGY_LABEL = {
     "s1-trend-pullback": "Trend-Rücksetzer",
     "s2-volume-breakout": "Ausbruch mit Volumen",
     "s3-mean-reversion": "Gegenbewegung",
+    "i1-core-trend": "Invest Kern BTC/ETH",
+    "i2-satellite-strength": "Invest Satellit (stärker als BTC, Volumen)",
+    "i3-satellite-news": "Invest Satellit (stärker als BTC, Nachrichten)",
 }
 
 _NEW_BUYS = """
@@ -28,8 +36,11 @@ select s.id, s.instrument_id, s.timeframe, s.strategy_version_id, s.candle_close
        (select json_agg(json_build_object('status', o.status, 'reasons', o.reasons) order by o.created_at)
           from signal_outcome o where o.signal_id = s.id) as outcomes
 from signal s join instrument i on i.id = s.instrument_id
-where s.action = 'BUY' and s.created_at >= %s
+where s.action = 'BUY' and s.created_at >= %s and not (s.strategy_version_id = any(%s))
   and not exists (select 1 from alert a where a.dedup_key = 'signal:' || s.id::text)
+  and not (s.strategy_version_id = any(%s) and exists (
+        select 1 from alert a where a.kind = 'SIGNAL_BUY' and a.data->>'instrument_id' = s.instrument_id
+          and a.data->>'strategy' = s.strategy_version_id and a.created_at >= %s))
 order by s.created_at
 """
 
@@ -82,9 +93,10 @@ def raise_signal_alerts(conn: Conn, now: datetime) -> int:
         "where kind = %s and status <> 'RESOLVED' and created_at < %s",
         (now, now, KIND, now - timedelta(days=1)),
     )
-    rows = conn.execute(_NEW_BUYS, (now - MAX_AGE,)).fetchall()
+    rows = conn.execute(_NEW_BUYS, (now - MAX_AGE, QUIET, INVEST_IDS, now - INVEST_REPEAT)).fetchall()
     for row in rows:
         title, body = signal_text(row)
         raise_alert(conn, "SIGNAL", "PAPER", KIND, f"signal:{row['id']}", title, body,
-                    {"signal_id": str(row["id"]), "instrument_id": row["instrument_id"], "timeframe": row["timeframe"]}, now)
+                    {"signal_id": str(row["id"]), "instrument_id": row["instrument_id"], "timeframe": row["timeframe"],
+                     "strategy": row["strategy_version_id"]}, now)
     return len(rows)

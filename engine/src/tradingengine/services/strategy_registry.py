@@ -7,7 +7,7 @@ from __future__ import annotations
 from typing import Any
 
 from ..core.signals import StrategyVersion
-from ..core.strategies import ACTIVE, StrategyDef, from_version
+from ..core.strategies import ACTIVE, INVEST, StrategyDef, from_version
 
 RELEASED = ("SHADOW", "APPROVED_LIVE")
 
@@ -21,7 +21,7 @@ def released_versions(conn: Any) -> list[StrategyDef]:
         """,
         (list(RELEASED),),
     ).fetchall()
-    known = {s.version.id for s in ACTIVE}
+    known = {s.version.id for s in (*ACTIVE, *INVEST)}
     out: list[StrategyDef] = []
     for r in rows:
         if r["id"] in known:
@@ -33,4 +33,4 @@ def released_versions(conn: Any) -> list[StrategyDef]:
 
 
 def all_strategies(conn: Any) -> list[StrategyDef]:
-    return [*ACTIVE, *released_versions(conn)]
+    return [*ACTIVE, *INVEST, *released_versions(conn)]

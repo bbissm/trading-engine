@@ -27,7 +27,7 @@ from ..core.paper import Management, PaperState, RiskInputs, close_all, pause_en
 from ..core.regime import RegimePoint, daily_regimes, regime_at
 from ..core.risk import RiskPolicy
 from ..core.simulator import SimConfig
-from ..core.strategies import ACTIVE, StrategyDef
+from ..core.strategies import ACTIVE, INVEST, StrategyDef
 from ..ports import Command
 from ..universe_stocks import is_stock_id
 
@@ -42,6 +42,35 @@ COST_MODELS: dict[str, CostModel] = {KRAKEN_SPOT_TIER1.version: KRAKEN_SPOT_TIER
 ASSET_CLASSES = {"CRYPTO": (KRAKEN_SPOT_TIER1.version, "sim@1"), "US_STOCKS": (IBKR_FIXED_US.version, "sim-stocks@1")}
 SIM = SimConfig()
 MANAGED_STATES = {"ACTIVE", "ENTRIES_PAUSED", "WINDING_DOWN", "STOPPED", "ERROR"}
+
+# Invest-Topf (docs/11, E-12): grosse Schwankungen sind eingeplant, darum weitere Grenzen als im Trading
+INVEST_POLICY = RiskPolicy(
+    version="risk-invest@1", risk_per_trade=Decimal("0.08"), max_open_risk=Decimal("0.35"), max_positions=8,
+    max_instrument_share=Decimal("0.30"), cash_reserve=Decimal("0.05"), daily_loss_limit=Decimal("0.12"), weekly_loss_limit=Decimal("0.25"),
+    drawdown_pause=Decimal("0.45"), drawdown_emergency=Decimal("0.60"), max_entries_per_day=8, loss_streak_cooldown=6,
+    max_group_positions=5, max_group_risk=Decimal("0.25"),
+)
+# Vergleichsmassstab «Halten»: keine Verlustgrenzen, sonst wäre es kein Halten
+HOLD_POLICY = RiskPolicy(
+    version="risk-hold@1", risk_per_trade=Decimal("0.5"), max_open_risk=Decimal(1), max_positions=2, max_instrument_share=Decimal("0.5"),
+    cash_reserve=Decimal("0.05"), daily_loss_limit=Decimal(1), weekly_loss_limit=Decimal(1), drawdown_pause=Decimal(1), drawdown_emergency=Decimal(1),
+    max_entries_per_day=2, loss_streak_cooldown=1000, max_group_positions=2, max_group_risk=Decimal(1),
+)
+_I = {s.version.strategy: s.version.id for s in INVEST}
+PROFILES: dict[str, tuple[RiskPolicy, list[str]]] = {
+    "TRADING": (RiskPolicy(), [s.version.id for s in ACTIVE]),
+    "INVEST_RULES": (INVEST_POLICY, [_I["i1-core-trend"], _I["i2-satellite-strength"]]),
+    "INVEST_NEWS": (INVEST_POLICY, [_I["i1-core-trend"], _I["i3-satellite-news"]]),
+    "HOLD": (HOLD_POLICY, [_I["h1-hold"]]),
+}
+
+
+def profile_of(policy_version: str | None, strategy_ids: list[str]) -> str:
+    """Profil eines bestehenden Kontos (für den Reset): Invest-Konten bleiben Invest-Konten."""
+    for name, (policy, ids) in PROFILES.items():
+        if name != "TRADING" and policy.version == policy_version and set(ids) == set(strategy_ids):
+            return name
+    return "TRADING"
 
 
 def _day_and_week_start(now: datetime) -> tuple[datetime, datetime]:
@@ -192,8 +221,12 @@ def handle_command(repo: PaperRepo, cmd: Command, now: datetime) -> tuple[str, d
         if asset_class not in ASSET_CLASSES:
             return "REJECTED", {"reason": f"Unbekannte Anlageklasse {asset_class} (CRYPTO oder US_STOCKS)"}
         cost_model, sim_version = ASSET_CLASSES[asset_class]
-        repo.create_account(account_id, name, "USD", cash, RiskPolicy(), [s.version.id for s in ACTIVE], cost_model, sim_version, now, sim_through)
-        return "DONE", {"account_id": account_id, "state": "READY", "asset_class": asset_class}
+        profile = str(cmd.params.get("profile") or "TRADING")
+        if profile not in PROFILES or (profile != "TRADING" and asset_class != "CRYPTO"):
+            return "REJECTED", {"reason": f"Unbekanntes Profil {profile} ({', '.join(PROFILES)}; Invest nur für Crypto)"}
+        policy, strategy_ids = PROFILES[profile]
+        repo.create_account(account_id, name, "USD", cash, policy, strategy_ids, cost_model, sim_version, now, sim_through)
+        return "DONE", {"account_id": account_id, "state": "READY", "asset_class": asset_class, "profile": profile}
 
     rows = {a["id"]: a for a in repo.accounts()}
     row = rows.get(cmd.target or "")
@@ -235,7 +268,8 @@ def handle_command(repo: PaperRepo, cmd: Command, now: datetime) -> tuple[str, d
         # Reset behält Anlageklasse und Kostenmodell des Kontos
         cost_model = row["cost_model"]
         sim_version = next((sim for cm, sim in ASSET_CLASSES.values() if cm == cost_model), SIM.version)
-        number = repo.reset_account(account_id, cash, RiskPolicy(), [s.version.id for s in ACTIVE], cost_model, sim_version, now, sim_through)
+        policy, strategy_ids = PROFILES[profile_of((row["policy"] or {}).get("version"), list(row["strategy_version_ids"] or []))]
+        number = repo.reset_account(account_id, cash, policy, strategy_ids, cost_model, sim_version, now, sim_through)
         repo.set_autopilot(account_id, "READY", f"Neue Episode {number}", now)
         return "DONE", {"state": "READY", "episode": number}
 

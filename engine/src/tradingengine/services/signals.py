@@ -14,10 +14,11 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from ..core import indicators as ind
 from ..core.candles import Candle, floor_time, timeframe_delta
+from ..core.news import NewsPoint, news_asset
 from ..core.regime import REGIME_RULE_VERSION, RegimePoint, daily_regimes, regime_at
 from ..core.signals import FeatureSnapshot, Signal
 from ..core.strategies import ACTIVE, StrategyDef
@@ -32,6 +33,7 @@ ValidUntil = Callable[[Instrument, str, datetime], datetime | None]
 
 REGIME_TIMEFRAME = "1d"
 LOOKBACK = 600
+NEWS_DAYS = 30
 
 
 def _snapshots(instrument_id: str, timeframe: str, candles: list[Candle], regimes: list[RegimePoint]) -> list[FeatureSnapshot]:
@@ -110,8 +112,17 @@ def run_once(
                 still_pending.add(key)
                 continue
 
+            news: list[NewsPoint] | None = None
             for strategy in active:
-                decision = strategy.decide(candles, own, leader, tick=inst.tick_size)[-1]
+                if not strategy.applies(timeframe):
+                    continue
+                if strategy.decide_news is not None:
+                    if news is None:
+                        asset = news_asset(inst.base_asset)
+                        news = store.news_points(asset, last.close_time - timedelta(days=NEWS_DAYS), last.close_time) if asset else []
+                    decision = strategy.decide_news(candles, own, leader, news, tick=inst.tick_size)[-1]
+                else:
+                    decision = strategy.decide(candles, own, leader, tick=inst.tick_size)[-1]
                 signal = Signal(
                     instrument_id=inst.id,
                     timeframe=timeframe,
